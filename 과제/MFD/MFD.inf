@@ -1,0 +1,49 @@
+[Version]
+Signature   = "$Windows NT$"
+Class       = "ActivityMonitor"
+ClassGuid   = {b86dff51-a31e-4bac-b3cf-e8cfe75c9fc2}
+Provider    = %ProviderString%
+DriverVer = 05/12/2025,18.44.35.811
+CatalogFile = MFD.cat
+
+[DestinationDirs]
+DefaultDestDir  = 12
+
+[DefaultInstall.NTamd64]
+CopyFiles = MFD.DriverFiles
+
+[DefaultInstall.NTamd64.Services]
+AddService = %ServiceName%,,MFD.Service
+
+[MFD.Service]
+ServiceType    = 1                           ; SERVICE_KERNEL_DRIVER
+StartType      = 3                           ; Manual start
+ErrorControl   = 1                           ; Normal error handling
+ServiceBinary  = %12%\MFD.sys       ; \SystemRoot\System32\drivers\MFD.sys
+LoadOrderGroup = "FSFilter Activity Monitor"
+AddReg         = MFD.AddRegistry
+
+[MFD.AddRegistry]
+HKR, "Instances", "DefaultInstance", 0x00000000, %DefaultInstance%
+HKR, "Instances\%Instance1.Name%", "Altitude", 0x00000000, %Instance1.Altitude%
+HKR, "Instances\%Instance1.Name%", "Flags",    0x00010001, %Instance1.Flags%
+
+[MFD.DriverFiles]
+MFD.sys
+
+[SourceDisksFiles]
+MFD.sys = 1,,
+
+[SourceDisksNames]
+1 = %DiskId1%,,,,
+
+[Strings]
+ProviderString     = "MFD"
+ServiceName        = "MFD"
+DriverName         = "MFD"
+DiskId1            = "MFD Installation Disk"
+ServiceDescription = "MFD written by GYTNI"
+DefaultInstance    = "MFD"
+Instance1.Name     = "MFD"
+Instance1.Altitude = "385050"
+Instance1.Flags    = 0x0
