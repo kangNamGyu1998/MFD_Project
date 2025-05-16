@@ -1,9 +1,7 @@
 #include <fltKernel.h>
-#include <dontuse.h>
-#include <suppress.h>
 #include <ntstrsafe.h>
 
-#define COMM_PORT_NAME L"\FilterPort\ProcessMonitorPort"
+#define COMM_PORT_NAME L"\\FilterPort\\ProcessMonitorPort"
 
 PFLT_FILTER gFilterHandle = NULL;
 PFLT_PORT gServerPort = NULL;
@@ -29,6 +27,7 @@ NTSTATUS PortConnect( PFLT_PORT ClientPort, PVOID ServerPortCookie, PVOID Connec
     return STATUS_SUCCESS;
 }
 
+//포트 연결 해제 콜백
 VOID PortDisconnect( PVOID ConnectionCookie )
 {
     UNREFERENCED_PARAMETER( ConnectionCookie );
@@ -38,7 +37,7 @@ VOID PortDisconnect( PVOID ConnectionCookie )
     }
 }
 
-// IRP_MJ_CREATE PreCallback
+// IRP_MJ_CREATE PreCallback/처리하기 전 파일 이름을 유저 프로세스로 전송
 FLT_PREOP_CALLBACK_STATUS PreCreateCallback( PFLT_CALLBACK_DATA Data, PCFLT_RELATED_OBJECTS FltObjects, PVOID* CompletionContext )
 {
     UNREFERENCED_PARAMETER( FltObjects );
@@ -64,6 +63,7 @@ FLT_PREOP_CALLBACK_STATUS PreCreateCallback( PFLT_CALLBACK_DATA Data, PCFLT_RELA
     return FLT_PREOP_SUCCESS_WITH_CALLBACK;
 }
 
+// IRP_MJ_CREATE PostCallback/처리한 후 파일 이름과 성공 여부를 유저 프로세스로 전송
 FLT_POSTOP_CALLBACK_STATUS PostCreateCallback( PFLT_CALLBACK_DATA Data, PCFLT_RELATED_OBJECTS FltObjects, PVOID CompletionContext, FLT_POST_OPERATION_FLAGS Flags )
 {
     UNREFERENCED_PARAMETER( FltObjects );
@@ -94,11 +94,11 @@ FLT_POSTOP_CALLBACK_STATUS PostCreateCallback( PFLT_CALLBACK_DATA Data, PCFLT_RE
 
 // Operation Registration
 CONST FLT_OPERATION_REGISTRATION Callbacks[] = {
-    { IRP_MJ_CREATE, 0, PreCreateCallback, PostCreateCallback },
+    { IRP_MJ_CREATE, 0, PreCreateCallback, PostCreateCallback, NULL },
     { IRP_MJ_OPERATION_END }
 };
 
-// Unload
+// Driver Unload
 NTSTATUS DriverUnload( FLT_FILTER_UNLOAD_FLAGS Flags )
 {
     UNREFERENCED_PARAMETER( Flags );
@@ -114,28 +114,38 @@ NTSTATUS DriverUnload( FLT_FILTER_UNLOAD_FLAGS Flags )
 
 // Entry Point
 extern "C"
-NTSTATUS DriverEntry( PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath )
+NTSTATUS DriverEntry( _In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING RegistryPath )
 {
+    DbgPrint( "DriverEntry 시작\n" );
     UNREFERENCED_PARAMETER( RegistryPath );
     NTSTATUS status;
 
     FLT_REGISTRATION filterRegistration = {
-        sizeof( FLT_REGISTRATION ),
-        FLT_REGISTRATION_VERSION,
-        0,
-        NULL,
-        Callbacks,
-        DriverUnload,
-        NULL, NULL, NULL, NULL,
-        NULL, NULL, NULL, NULL
+    .Size = sizeof( FLT_REGISTRATION ),
+    .Version = FLT_REGISTRATION_VERSION,
+    .Flags = 0,
+    .ContextRegistration = NULL,
+    .OperationRegistration = Callbacks,
+    .FilterUnloadCallback = DriverUnload,
+    .InstanceSetupCallback = NULL,
+    .InstanceQueryTeardownCallback = NULL,
+    .InstanceTeardownStartCallback = NULL,
+    .InstanceTeardownCompleteCallback = NULL,
+    .GenerateFileNameCallback = NULL,
+    .NormalizeNameComponentCallback = NULL,
+    .NormalizeContextCleanupCallback = NULL,
+    .TransactionNotificationCallback = NULL,
+    .NormalizeNameComponentExCallback = NULL
     };
 
     UNICODE_STRING uniName = RTL_CONSTANT_STRING( COMM_PORT_NAME );
     OBJECT_ATTRIBUTES oa;
-    InitializeObjectAttributes( &oa, &uniName, OBJ_KERNEL_HANDLE | OBJ_CASE_INSENSITIVE, NULL, NULL );
+    InitializeObjectAttributes( &oa, &uniName, OBJ_KERNEL_HANDLE | OBJ_CASE_INSENSITIVE, NULL, NULL ); // p, n, a, r, s
 
     status = FltRegisterFilter( DriverObject, &filterRegistration, &gFilterHandle );
-    if( !NT_SUCCESS( status ) ) return status;
+    DbgPrint( "FltRegisterFilter 결과: 0x%x\n", status );
+    if( !NT_SUCCESS( status ) ) 
+        return status;
 
     status = FltCreateCommunicationPort(
         gFilterHandle,
@@ -147,6 +157,9 @@ NTSTATUS DriverEntry( PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath 
         NULL,
         1
     );
+    
+    
+    DbgPrint( "FltCreateCommunicationPort 결과: 0x%x\n", status );
     if( !NT_SUCCESS( status ) ) {
         FltUnregisterFilter( gFilterHandle );
         return status;

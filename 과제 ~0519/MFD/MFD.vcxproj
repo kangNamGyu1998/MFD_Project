@@ -26,6 +26,10 @@
     <Configuration>Debug</Configuration>
     <Platform Condition="'$(Platform)' == ''">x64</Platform>
     <RootNamespace>MFD</RootNamespace>
+<<<<<<< HEAD
+    <WindowsTargetPlatformVersion>$(LatestTargetPlatformVersion)</WindowsTargetPlatformVersion>
+=======
+>>>>>>> 0061ebd59bed839b77c237bc5c567ba79200e588
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
@@ -84,21 +88,58 @@
     <DriverSign>
       <FileDigestAlgorithm>sha256</FileDigestAlgorithm>
     </DriverSign>
+<<<<<<< HEAD
+    <ClCompile>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>%(AdditionalDependencies);fltmgr.lib</AdditionalDependencies>
+    </Link>
+=======
+>>>>>>> 0061ebd59bed839b77c237bc5c567ba79200e588
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <DriverSign>
       <FileDigestAlgorithm>sha256</FileDigestAlgorithm>
     </DriverSign>
+<<<<<<< HEAD
+    <ClCompile>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>%(AdditionalDependencies);fltmgr.lib</AdditionalDependencies>
+    </Link>
+=======
+>>>>>>> 0061ebd59bed839b77c237bc5c567ba79200e588
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">
     <DriverSign>
       <FileDigestAlgorithm>sha256</FileDigestAlgorithm>
     </DriverSign>
+<<<<<<< HEAD
+    <ClCompile>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>%(AdditionalDependencies);fltmgr.lib</AdditionalDependencies>
+    </Link>
+=======
+>>>>>>> 0061ebd59bed839b77c237bc5c567ba79200e588
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">
     <DriverSign>
       <FileDigestAlgorithm>sha256</FileDigestAlgorithm>
     </DriverSign>
+<<<<<<< HEAD
+    <ClCompile>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>%(AdditionalDependencies);fltmgr.lib</AdditionalDependencies>
+    </Link>
+=======
+>>>>>>> 0061ebd59bed839b77c237bc5c567ba79200e588
   </ItemDefinitionGroup>
   <ItemGroup>
     <Inf Include="MFD.inf" />

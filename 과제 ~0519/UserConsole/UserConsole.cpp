@@ -1,7 +1,12 @@
 ﻿#include <windows.h>
 #include <stdio.h>
 #include <winternl.h>
+<<<<<<< HEAD
+
+#define COMM_PORT_NAME L"\\FilterPort\\ProcessMonitorPort"
+=======
 #define COMM_PORT_NAME L"\\.\ProcessMonitorPort"
+>>>>>>> 0061ebd59bed839b77c237bc5c567ba79200e588
 
 // 드라이버와 동일한 구조체 정의
 typedef struct _IRP_CREATE_INFO {
