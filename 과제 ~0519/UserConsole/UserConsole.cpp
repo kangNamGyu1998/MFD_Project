@@ -36,7 +36,7 @@ int main() {
     }
     wprintf( L"[*] Port Connect Success: 0x%08X\n", hr );
 
-    wprintf( L"%s\n", L"C:\\Dev\\UserConsole.exe" );
+    wprintf( L"C:\\Dev\\UserConsole.exe\n" );
     wprintf( L"Connect MiniFilter...\n" );
 
     while( true ) {
