@@ -39,29 +39,33 @@ typedef struct _GENERIC_MESSAGE {
     };
 } GENERIC_MESSAGE, * PGENERIC_MESSAGE;
 
-VOID SaveProcessName( ULONG pid, const WCHAR* name ) {
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+//CreateInfo시 Terminate를 대비해서 Pid와 ImangeName을 저장하는 함수
+VOID SaveProcessName( ULONG pid, const WCHAR* InName ) {
+    //동적 할당을 하며 할당 실패 시 함수를 바로 종료해 안정성을 확보한다, NonPagePool: 항상 메모리에 상주하는 커널 풀, prnm: 메모리 태그
     PROCESS_NAME_RECORD* rec = (PROCESS_NAME_RECORD*)ExAllocatePoolWithTag( NonPagedPool, sizeof( PROCESS_NAME_RECORD ), 'prnm' );
-    if( !rec ) return;
+	if( !rec ) return;
 
-    rec->Pid = pid;
-    RtlStringCchCopyW( rec->ProcessName, 260, name );
+    rec->Pid = pid; //동적 할당된 메모리에 PID 저장
+    RtlStringCchCopyW( rec->ProcessName, 260, InName ); //동적 할당된 메모리에 ImageName 저장
 
-    ExAcquireFastMutex( &g_ProcessListLock );
-    InsertTailList( &g_ProcessNameList, &rec->Entry );
-    ExReleaseFastMutex( &g_ProcessListLock );
+    ExAcquireFastMutex( &g_ProcessListLock ); //뮤텍스로 동기화하여 다중 스레드 접근 충돌 방지
+    InsertTailList( &g_ProcessNameList, &rec->Entry ); //리스트 끝에 새로운 항목 추가
+    ExReleaseFastMutex( &g_ProcessListLock ); //뮤텍스 동기화 해제
 }
 
-BOOLEAN FindProcessName( ULONG pid, WCHAR* outName ) {
+BOOLEAN FindProcessName( ULONG pid, WCHAR* OutName ) {
     BOOLEAN found = FALSE;
 
-    ExAcquireFastMutex( &g_ProcessListLock );
+    ExAcquireFastMutex( &g_ProcessListLock ); //뮤덱스로 동기화하여 다중 스레드 접근 충돌 방지
 
     for( PLIST_ENTRY p = g_ProcessNameList.Flink; p != &g_ProcessNameList; p = p->Flink ) {
         PROCESS_NAME_RECORD* rec = CONTAINING_RECORD( p, PROCESS_NAME_RECORD, Entry );
         if( rec->Pid == pid ) {
-            RtlStringCchCopyW( outName, 260, rec->ProcessName );
-            RemoveEntryList( p );
-            ExFreePoolWithTag( rec, 'prnm' );
+            RtlStringCchCopyW( OutName, 260, rec->ProcessName ); //리스트 순회 중 Pid가 기록된 Pid와 같다면 그 구조체의 ProcessName을 OutName에 복사
+            RemoveEntryList( p ); //리시트에서 해당 구조체 제거
+            ExFreePoolWithTag( rec, 'prnm' ); //메모리 해제
             found = TRUE;
             break;
         }
@@ -90,6 +94,7 @@ VOID ProcessNotifyEx( PEPROCESS Process, HANDLE ProcessId, PPS_CREATE_NOTIFY_INF
 
         if( CreateInfo->ImageFileName ) {
             RtlStringCchCopyW( msg.ProcInfo.ImageName, 260, CreateInfo->ImageFileName->Buffer );
+            SaveProcessName( msg.ProcInfo.ProcessId, msg.ProcInfo.ImageName );
         }
         else {
             RtlStringCchCopyW( msg.ProcInfo.ImageName, 260, L"<Unknown>" );
@@ -99,7 +104,12 @@ VOID ProcessNotifyEx( PEPROCESS Process, HANDLE ProcessId, PPS_CREATE_NOTIFY_INF
         // 프로세스 종료
         msg.ProcInfo.IsCreate = FALSE;
         msg.ProcInfo.ProcessId = (ULONG)(ULONG_PTR)ProcessId;
-        RtlStringCchCopyW( msg.ProcInfo.ImageName, 260, L"<Terminated>" );
+
+        WCHAR TName[ 260 ] = L"<Unknown>";
+        if( FindProcessName( msg.ProcInfo.ProcessId, TName ) )
+            RtlStringCchCopyW( msg.ProcInfo.ImageName, 260, TName );
+        else
+            RtlStringCchCopyW( msg.ProcInfo.ImageName, 260, L"<Unknown Terminate>" );
     }
 
     FltSendMessage( gFilterHandle, &gClientPort, &msg, sizeof( msg ), NULL, NULL, NULL );
@@ -283,6 +293,9 @@ NTSTATUS DriverEntry( PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath 
         FltUnregisterFilter( gFilterHandle );
         return status;
     }
+
+    ExInitializeFastMutex( &g_ProcessListLock );
+    InitializeListHead( &g_ProcessNameList );
 
     status = PsSetCreateProcessNotifyRoutineEx( ProcessNotifyEx, FALSE );
     if( !NT_SUCCESS( status ) ) 

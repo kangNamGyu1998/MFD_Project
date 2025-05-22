@@ -16,8 +16,8 @@ typedef struct _IRP_CREATE_INFO {
 typedef struct _PROC_EVENT_INFO {
     BOOLEAN IsCreate; // TRUE = 생성, FALSE = 종료
     ULONG ProcessId;
-    ULONG ParentProcessId;
     WCHAR ImageName[ 260 ];
+    ULONG ParentProcessId;
 } PROC_EVENT_INFO, * PPROC_EVENT_INFO;
 
 typedef struct _GENERIC_MESSAGE {
@@ -32,6 +32,7 @@ typedef struct _MESSAGE_BUFFER {
     GENERIC_MESSAGE       MessageBody;
 } MESSAGE_BUFFER, * PMESSAGE_BUFFER;
 
+//////////////////////////////////////////////////
 
 int main() {
 
