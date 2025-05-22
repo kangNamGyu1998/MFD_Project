@@ -1,4 +1,4 @@
-﻿#include <windows.h>
+#include <windows.h>
 #include <stdio.h>
 #include <winternl.h>
 #include <fltuser.h>
@@ -9,23 +9,29 @@
 // 드라이버와 동일한 구조체 정의
 typedef struct _IRP_CREATE_INFO {
     BOOLEAN IsPost;  // FALSE: Pre, TRUE: Post
-    WCHAR FileName[ 260 ];
     NTSTATUS ResultStatus;  // Post에서 사용
+    WCHAR FileName[ 260 ];
 } IRP_CREATE_INFO, * PIRP_CREATE_INFO;
 
 typedef struct _PROC_EVENT_INFO {
     BOOLEAN IsCreate; // TRUE = 생성, FALSE = 종료
     ULONG ProcessId;
-    WCHAR ImageName[ 260 ];
     ULONG ParentProcessId;
+    WCHAR ImageName[ 260 ];
 } PROC_EVENT_INFO, * PPROC_EVENT_INFO;
 
+typedef enum _MESSAGE_TYPE {
+    MessageTypeIrpCreate,
+    MessageTypeProcEvent
+} MESSAGE_TYPE;
+
 typedef struct _GENERIC_MESSAGE {
+    MESSAGE_TYPE Type;
     union {
         IRP_CREATE_INFO IrpInfo;
         PROC_EVENT_INFO ProcInfo;
     };
-} GENERIC_MESSAGE;
+} GENERIC_MESSAGE, * PGENERIC_MESSAGE;
 
 typedef struct _MESSAGE_BUFFER {
     FILTER_MESSAGE_HEADER MessageHeader;
@@ -72,36 +78,35 @@ int main() {
 
         const auto IrpInfo = &messageBuffer.MessageBody.IrpInfo;
         const auto ProcpInfo = &messageBuffer.MessageBody.ProcInfo;
-        
-        if( IrpInfo->FileName[ 0 ] != L'\0' ) 
+
+        switch( messageBuffer.MessageBody.Type )
         {
-//            if( IrpInfo->IsPost ) {
-//                wprintf( L"IRP : IRP_MJ_CREATE, Type : Post, File : %s, Result : %s\n",
-//                    IrpInfo->FileName,
-//                    NT_SUCCESS( IrpInfo->ResultStatus ) ? L"Success" : L"Failure" );
-//            }
-//            else {
-//                wprintf( L"IRP : IRP_MJ_CREATE, Type : Pre, File : %s\n", IrpInfo->FileName );
-//            }
-        }
-        else if( ProcpInfo->ImageName[ 0 ] != L'\0' )
-        {
-            if( ProcpInfo->IsCreate ) {
-                wprintf( L"IRP : Proc Created, PID : %lu, ParentPID : %lu, Name : %s\n",
-                    ProcpInfo->ProcessId, ProcpInfo->ParentProcessId, ProcpInfo->ImageName );
-            }
-            else {
-                wprintf( L"IRP : Proc Terminated, PID : %lu, Name : %s\n",
-                    ProcpInfo->ProcessId, ProcpInfo->ImageName );
-            }
-        }
-        else
-        {
-            wprintf( L"No Message Has Called ");
-            break;
+			case MessageTypeIrpCreate:
+			{
+				if( IrpInfo->IsPost ) 
+                {
+					//                wprintf( L"IRP : IRP_MJ_CREATE, Type : Post, File : %s, Result : %s\n",
+					//                    IrpInfo->FileName,
+					//                    NT_SUCCESS( IrpInfo->ResultStatus ) ? L"Success" : L"Failure" );
+					//            }
+					//            else {
+					//                wprintf( L"IRP : IRP_MJ_CREATE, Type : Pre, File : %s\n", IrpInfo->FileName );
+					//            }
+				}break;
+			case MessageTypeProcEvent:
+			{
+			    if( ProcpInfo->IsCreate ) {
+			        wprintf( L"IRP : Proc Created, PID : %lu, ParentPID : %lu, Name : %s\n",
+			            ProcpInfo->ProcessId, ProcpInfo->ParentProcessId, ProcpInfo->ImageName );
+			    }
+			    else {
+			        wprintf( L"IRP : Proc Terminated, PID : %lu, Name : %s\n",
+			            ProcpInfo->ProcessId, ProcpInfo->ImageName );
+			    }
+			}break;
+			}
         }
     }
-
     CloseHandle( hPort );
     return 0;
 }

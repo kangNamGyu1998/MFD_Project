@@ -7,11 +7,13 @@ PFLT_FILTER gFilterHandle = NULL;
 PFLT_PORT gServerPort = NULL;
 PFLT_PORT gClientPort = NULL;
 
+LARGE_INTEGER TimeOut;
+
 //Terminate된 프로세스의 이름과 PID를 저장하기 위한 구조체
 typedef struct _PROCESS_NAME_RECORD {
     ULONG Pid;
-    WCHAR ProcessName[ 260 ];
     LIST_ENTRY Entry;
+    WCHAR ProcessName[ 260 ];
 } PROCESS_NAME_RECORD;
 
 LIST_ENTRY g_ProcessNameList;
@@ -20,8 +22,8 @@ FAST_MUTEX g_ProcessListLock;
 // IRP 통신에 사용할 구조체
 typedef struct _IRP_CREATE_INFO {
     BOOLEAN IsPost;
-    WCHAR FileName[ 260 ];
     NTSTATUS ResultStatus;
+    WCHAR ImageName[ 260 ];
 } IRP_CREATE_INFO, * PIRP_CREATE_INFO;
 
 //Process Event 통신에 사용할 구조체
@@ -32,7 +34,13 @@ typedef struct _PROC_EVENT_INFO {
     WCHAR ImageName[ 260 ];
 } PROC_EVENT_INFO, * PPROC_EVENT_INFO;
 
+typedef enum _MESSAGE_TYPE {
+    MessageTypeIrpCreate,
+    MessageTypeProcEvent
+} MESSAGE_TYPE;
+
 typedef struct _GENERIC_MESSAGE {
+    MESSAGE_TYPE Type;
     union {
         IRP_CREATE_INFO IrpInfo;
         PROC_EVENT_INFO ProcInfo;
@@ -40,6 +48,24 @@ typedef struct _GENERIC_MESSAGE {
 } GENERIC_MESSAGE, * PGENERIC_MESSAGE;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+//확장자와 프로세스 이름만 남기는 함수
+VOID ExtractFileName( const WCHAR* fullPath, WCHAR* outFileName, SIZE_T outLen )
+{
+    if( !fullPath || !outFileName )
+        return;
+
+    const WCHAR* lastSlash = fullPath;
+    const WCHAR* p = fullPath;
+
+    while( *p != L'\0' ) {
+        if( *p == L'\\' || *p == L'/' )
+            lastSlash = p + 1;
+        p++;
+    }
+
+    RtlStringCchCopyW( outFileName, outLen, lastSlash );
+}
 
 //CreateInfo시 Terminate를 대비해서 Pid와 ImangeName을 저장하는 함수
 VOID SaveProcessName( ULONG pid, const WCHAR* InName ) {
@@ -84,8 +110,9 @@ VOID ProcessNotifyEx( PEPROCESS Process, HANDLE ProcessId, PPS_CREATE_NOTIFY_INF
     if( !gClientPort )
         return;
 
-    GENERIC_MESSAGE msg = { 0 };
-
+    GENERIC_MESSAGE msg = {};
+    msg.Type = MessageTypeProcEvent;
+    TimeOut.QuadPart = -10 * 1000 * 1000;
     if( CreateInfo ) {
         // 프로세스 생성
         msg.ProcInfo.IsCreate = TRUE;
@@ -93,12 +120,21 @@ VOID ProcessNotifyEx( PEPROCESS Process, HANDLE ProcessId, PPS_CREATE_NOTIFY_INF
         msg.ProcInfo.ParentProcessId = (ULONG)(ULONG_PTR)CreateInfo->ParentProcessId;
 
         if( CreateInfo->ImageFileName ) {
-            RtlStringCchCopyW( msg.ProcInfo.ImageName, 260, CreateInfo->ImageFileName->Buffer );
-            SaveProcessName( msg.ProcInfo.ProcessId, msg.ProcInfo.ImageName );
+            WCHAR ShortName[260] = L"<Unknown>";
+            ExtractFileName( CreateInfo->ImageFileName->Buffer, ShortName, 260 );
+            RtlStringCchCopyW( msg.ProcInfo.ImageName, 260, ShortName );
+            SaveProcessName( (ULONG)(ULONG_PTR)ProcessId, ShortName );
         }
         else {
             RtlStringCchCopyW( msg.ProcInfo.ImageName, 260, L"<Unknown>" );
         }
+        DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+            "[Create] Type: %d, PID: %lu, ParentPID: %lu, ImageName: %ws\n",
+            msg.Type,
+            msg.ProcInfo.ProcessId,
+            msg.ProcInfo.ParentProcessId,
+            msg.ProcInfo.ImageName );
+
     }
     else {
         // 프로세스 종료
@@ -109,10 +145,15 @@ VOID ProcessNotifyEx( PEPROCESS Process, HANDLE ProcessId, PPS_CREATE_NOTIFY_INF
         if( FindProcessName( msg.ProcInfo.ProcessId, TName ) )
             RtlStringCchCopyW( msg.ProcInfo.ImageName, 260, TName );
         else
-            RtlStringCchCopyW( msg.ProcInfo.ImageName, 260, L"<Unknown Terminate>" );
+            RtlStringCchCopyW( msg.ProcInfo.ImageName, 260, L"<Unknown Process>" );
+        DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+            "[Terminate] Type: %d, PID: %lu, ImageName: %ws\n",
+            msg.Type,
+            msg.ProcInfo.ProcessId,
+            msg.ProcInfo.ImageName );
     }
 
-    FltSendMessage( gFilterHandle, &gClientPort, &msg, sizeof( msg ), NULL, NULL, NULL );
+    FltSendMessage( gFilterHandle, &gClientPort, &msg, sizeof( GENERIC_MESSAGE ), NULL, NULL, &TimeOut );
 }
 
 //인스턴스 연결 함수
@@ -148,22 +189,23 @@ FLT_PREOP_CALLBACK_STATUS PreCreateCallback( PFLT_CALLBACK_DATA Data, PCFLT_RELA
     if( !gClientPort ) //UserConsole과 통신 포트가 연결되지 않은 경우 메세지를 보낼 수 없으므로 종료
         return FLT_PREOP_SUCCESS_WITH_CALLBACK;
 
-    GENERIC_MESSAGE MSG = {0};
+    GENERIC_MESSAGE MSG = {};
+    MSG.Type = MessageTypeIrpCreate;
     MSG.IrpInfo.IsPost = FALSE; //Pre라는 것을 표시
 
     PFLT_FILE_NAME_INFORMATION nameInfo;
     //현재 요청된 파일의 경로 정보를 가져옴. FLT_FILE_NAME_NORMALIZED: 정규화된 파일 경로, FLT_FILE_NAME_QUERY_DEFAULT: 시스템이 판단한 파일 이름.
     if( NT_SUCCESS( FltGetFileNameInformation( Data, FLT_FILE_NAME_NORMALIZED | FLT_FILE_NAME_QUERY_DEFAULT, &nameInfo ) ) ) {
         FltParseFileNameInformation( nameInfo ); //nameInfo 구조체의 멤버들을 파싱해서 .Volume, .FinalComponent, .Extension 등으로 분리.
-        RtlStringCchCopyW( MSG.IrpInfo.FileName, 260, nameInfo->Name.Buffer ); //안전하게 문자열을 복사, 260은 최대 경로 길이(MAX_PATH)
+        RtlStringCchCopyW( MSG.IrpInfo.ImageName, 260, nameInfo->Name.Buffer );
         FltReleaseFileNameInformation( nameInfo ); //FltGetFilaNameInformation으로 할당된 메모리 해제
     }
     else {
-        RtlStringCchCopyW( MSG.IrpInfo.FileName, 260, L"<Unknown>" );
+        RtlStringCchCopyW( MSG.IrpInfo.ImageName, 260, L"<Unknown>" );
     }
 
     // 드라이버에서 UserConsole로 메시지를 전송. &info(IRP_CREATE_INFO): 전송할 데이터 구조체. UserConsole에서 FilterGetMessage()로 수신
-    //FltSendMessage( gFilterHandle, &gClientPort, &MSG, sizeof( MSG ), NULL, NULL, NULL );
+    FltSendMessage( gFilterHandle, &gClientPort, &MSG, sizeof( MSG ), NULL, NULL, NULL );
 
     return FLT_PREOP_SUCCESS_WITH_CALLBACK; //이 요청에 대해 추가 처리를 하지 않겠다고 반환
 }
@@ -174,7 +216,8 @@ FLT_POSTOP_CALLBACK_STATUS PostCreateCallback( PFLT_CALLBACK_DATA Data, PCFLT_RE
     if( !gClientPort ) //UserConsole과 통신 포트가 연결되지 않은 경우 메세지를 보낼 수 없으므로 종료
         return FLT_POSTOP_FINISHED_PROCESSING;
 
-    GENERIC_MESSAGE MSG= {0};
+    GENERIC_MESSAGE MSG = {};
+    MSG.Type = MessageTypeIrpCreate;
 	MSG.IrpInfo.IsPost = TRUE;
     MSG.IrpInfo.ResultStatus = Data->IoStatus.Status; //ResultStatus에 IRP처리 결과를 저장 (ex. STATUS_SUCCESS, STATUS_ACCESS_DENIED 등)
 
@@ -182,15 +225,15 @@ FLT_POSTOP_CALLBACK_STATUS PostCreateCallback( PFLT_CALLBACK_DATA Data, PCFLT_RE
     //현재 요청된 파일의 경로 정보를 가져옴. FLT_FILE_NAME_NORMALIZED: 정규화된 파일 경로, FLT_FILE_NAME_QUERY_DEFAULT: 시스템이 판단한 파일 이름.
     if( NT_SUCCESS( FltGetFileNameInformation( Data, FLT_FILE_NAME_NORMALIZED | FLT_FILE_NAME_QUERY_DEFAULT, &nameInfo ) ) ) {
         FltParseFileNameInformation( nameInfo ); //nameInfo 구조체의 멤버들을 파싱해서 .Volume, .FinalComponent, .Extension 등으로 분리.
-        RtlStringCchCopyW( MSG.IrpInfo.FileName, 260, nameInfo->Name.Buffer ); //안전하게 문자열을 복사, 260은 최대 경로 길이(MAX_PATH)
+        RtlStringCchCopyW( MSG.IrpInfo.ImageName, 260, nameInfo->Name.Buffer ); //안전하게 문자열을 복사, 260은 최대 경로 길이(MAX_PATH)
         FltReleaseFileNameInformation( nameInfo ); //FltGetFilaNameInformation으로 할당된 메모리 해제
     }
     else {
-        RtlStringCchCopyW( MSG.IrpInfo.FileName, 260, L"<Unknown>" );
+        RtlStringCchCopyW( MSG.IrpInfo.ImageName, 260, L"<Unknown>" );
     }
 
     // 드라이버에서 UserConsole로 메시지를 전송. &info(IRP_CREATE_INFO): 전송할 데이터 구조체. UserConsole에서 FilterGetMessage()로 수신
-    //FltSendMessage( gFilterHandle, &gClientPort, &MSG, sizeof( MSG ), NULL, NULL, NULL );
+    FltSendMessage( gFilterHandle, &gClientPort, &MSG, sizeof( MSG ), NULL, NULL, NULL );
 
     return FLT_POSTOP_FINISHED_PROCESSING; //이 요청에 대해 추가 처리를 하지 않겠다고 반환
 }
