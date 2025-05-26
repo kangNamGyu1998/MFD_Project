@@ -1,4 +1,4 @@
-#include <fltKernel.h>
+Ôªø#include <fltKernel.h>
 #include <ntstrsafe.h>
 
 #define COMM_PORT_NAME L"\\MFDPort"
@@ -9,7 +9,7 @@ PFLT_PORT gClientPort = NULL;
 
 LARGE_INTEGER TimeOut;
 
-//Terminateµ» «¡∑ŒººΩ∫¿« ¿Ã∏ß∞˙ PID∏¶ ¿˙¿Â«œ±‚ ¿ß«— ±∏¡∂√º
+#pragma pack(push, 1)
 typedef struct _PROCESS_NAME_RECORD {
     ULONG Pid;
     LIST_ENTRY Entry;
@@ -19,14 +19,12 @@ typedef struct _PROCESS_NAME_RECORD {
 LIST_ENTRY g_ProcessNameList;
 FAST_MUTEX g_ProcessListLock;
 
-// IRP ≈ÎΩ≈ø° ªÁøÎ«“ ±∏¡∂√º
 typedef struct _IRP_CREATE_INFO {
     BOOLEAN IsPost;
     NTSTATUS ResultStatus;
     WCHAR ImageName[ 260 ];
 } IRP_CREATE_INFO, * PIRP_CREATE_INFO;
 
-//Process Event ≈ÎΩ≈ø° ªÁøÎ«“ ±∏¡∂√º
 typedef struct _PROC_EVENT_INFO {
     BOOLEAN IsCreate;
     ULONG ProcessId;
@@ -46,10 +44,10 @@ typedef struct _GENERIC_MESSAGE {
         PROC_EVENT_INFO ProcInfo;
     };
 } GENERIC_MESSAGE, * PGENERIC_MESSAGE;
+#pragma pack(pop)
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-//»Æ¿Â¿⁄øÕ «¡∑ŒººΩ∫ ¿Ã∏ß∏∏ ≥≤±‚¥¬ «‘ºˆ
 VOID ExtractFileName( const WCHAR* fullPath, WCHAR* outFileName, SIZE_T outLen )
 {
     if( fullPath == NULL || outFileName == NULL )
@@ -67,32 +65,30 @@ VOID ExtractFileName( const WCHAR* fullPath, WCHAR* outFileName, SIZE_T outLen )
     RtlStringCchCopyW( outFileName, outLen, lastSlash );
 }
 
-//CreateInfoΩ√ Terminate∏¶ ¥Î∫Ò«ÿº≠ PidøÕ ImangeName¿ª ¿˙¿Â«œ¥¬ «‘ºˆ
 VOID SaveProcessName( ULONG pid, const WCHAR* InName ) {
-    //µø¿˚ «“¥Á¿ª «œ∏Á «“¥Á Ω«∆– Ω√ «‘ºˆ∏¶ πŸ∑Œ ¡æ∑·«ÿ æ»¡§º∫¿ª »Æ∫∏«—¥Ÿ, NonPagePool: «◊ªÛ ∏ﬁ∏∏Æø° ªÛ¡÷«œ¥¬ ƒø≥Œ «Æ, prnm: ∏ﬁ∏∏Æ ≈¬±◊
     PROCESS_NAME_RECORD* rec = (PROCESS_NAME_RECORD*)ExAllocatePoolWithTag( NonPagedPool, sizeof( PROCESS_NAME_RECORD ), 'prnm' );
 	if( rec == NULL )
         return;
 
-    rec->Pid = pid; //µø¿˚ «“¥Áµ» ∏ﬁ∏∏Æø° PID ¿˙¿Â
-    RtlStringCchCopyW( rec->ProcessName, 260, InName ); //µø¿˚ «“¥Áµ» ∏ﬁ∏∏Æø° ImageName ¿˙¿Â
+    rec->Pid = pid; //ÔøΩÔøΩÔøΩÔøΩ ÔøΩ“¥ÔøΩÔøΩ ÔøΩﬁ∏∏ÆøÔøΩ PID ÔøΩÔøΩÔøΩÔøΩ
+    RtlStringCchCopyW( rec->ProcessName, 260, InName );
 
-    ExAcquireFastMutex( &g_ProcessListLock ); //π¬≈ÿΩ∫∑Œ µø±‚»≠«œø© ¥Ÿ¡ﬂ Ω∫∑πµÂ ¡¢±Ÿ √Êµπ πÊ¡ˆ
-    InsertTailList( &g_ProcessNameList, &rec->Entry ); //∏ÆΩ∫∆Æ ≥°ø° ªı∑ŒøÓ «◊∏Ò √ﬂ∞°
-    ExReleaseFastMutex( &g_ProcessListLock ); //π¬≈ÿΩ∫ µø±‚»≠ «ÿ¡¶
+    ExAcquireFastMutex( &g_ProcessListLock );
+    InsertTailList( &g_ProcessNameList, &rec->Entry );
+    ExReleaseFastMutex( &g_ProcessListLock );
 }
 
 BOOLEAN FindProcessName( ULONG pid, WCHAR* OutName ) {
     BOOLEAN found = FALSE;
 
-    ExAcquireFastMutex( &g_ProcessListLock ); //π¬µ¶Ω∫∑Œ µø±‚»≠«œø© ¥Ÿ¡ﬂ Ω∫∑πµÂ ¡¢±Ÿ √Êµπ πÊ¡ˆ
+    ExAcquireFastMutex( &g_ProcessListLock );
 
     for( PLIST_ENTRY p = g_ProcessNameList.Flink; p != &g_ProcessNameList; p = p->Flink ) {
         PROCESS_NAME_RECORD* rec = CONTAINING_RECORD( p, PROCESS_NAME_RECORD, Entry );
         if( rec->Pid == pid ) {
-            RtlStringCchCopyW( OutName, 260, rec->ProcessName ); //∏ÆΩ∫∆Æ º¯»∏ ¡ﬂ Pid∞° ±‚∑œµ» PidøÕ ∞∞¥Ÿ∏È ±◊ ±∏¡∂√º¿« ProcessName¿ª OutNameø° ∫πªÁ
-            RemoveEntryList( p ); //∏ÆΩ√∆Æø°º≠ «ÿ¥Á ±∏¡∂√º ¡¶∞≈
-            ExFreePoolWithTag( rec, 'prnm' ); //∏ﬁ∏∏Æ «ÿ¡¶
+            RtlStringCchCopyW( OutName, 260, rec->ProcessName );
+            RemoveEntryList( p );
+            ExFreePoolWithTag( rec, 'prnm' );
             found = TRUE;
             break;
         }
@@ -102,7 +98,6 @@ BOOLEAN FindProcessName( ULONG pid, WCHAR* OutName ) {
     return found;
 }
 
-//«¡∑ŒººΩ∫ ª˝º∫/¡æ∑·∏¶ æÀ∑¡¡÷¥¬ «‘ºˆ
 extern "C"
 VOID ProcessNotifyEx( PEPROCESS Process, HANDLE ProcessId, PPS_CREATE_NOTIFY_INFO CreateInfo )
 {
@@ -114,31 +109,25 @@ VOID ProcessNotifyEx( PEPROCESS Process, HANDLE ProcessId, PPS_CREATE_NOTIFY_INF
     GENERIC_MESSAGE msg = {};
     msg.Type = MessageTypeProcEvent;
     TimeOut.QuadPart = -10 * 1000 * 1000;
-    if( CreateInfo != NULL ) {
-        // «¡∑ŒººΩ∫ ª˝º∫
+
+    if( CreateInfo != NULL && CreateInfo->ImageFileName->Length< 260 * sizeof(WCHAR) ) {
         msg.ProcInfo.IsCreate = TRUE;
         msg.ProcInfo.ProcessId = (ULONG)(ULONG_PTR)ProcessId;
         msg.ProcInfo.ParentProcessId = (ULONG)(ULONG_PTR)CreateInfo->ParentProcessId;
 
-        if( CreateInfo->ImageFileName != NULL ) {
+        if( CreateInfo->ImageFileName != NULL ) 
+        {
             WCHAR ShortName[260] = L"<Unknown>";
-            ExtractFileName( CreateInfo->ImageFileName->Buffer, ShortName, 260 );
-            RtlStringCchCopyW( msg.ProcInfo.ImageName, 260, ShortName );
+            ExtractFileName( CreateInfo->ImageFileName->Buffer, ShortName, 259 );
+            RtlStringCchCopyW( msg.ProcInfo.ImageName, 259, ShortName );
             SaveProcessName( (ULONG)(ULONG_PTR)ProcessId, ShortName );
         }
-        else {
+        else
+        {
             RtlStringCchCopyW( msg.ProcInfo.ImageName, 260, L"<Unknown>" );
         }
-        DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
-            "[Create] Type: %d, PID: %lu, ParentPID: %lu, ImageName: %ws\n",
-            msg.Type,
-            msg.ProcInfo.ProcessId,
-            msg.ProcInfo.ParentProcessId,
-            msg.ProcInfo.ImageName );
-
     }
     else {
-        // «¡∑ŒººΩ∫ ¡æ∑·
         msg.ProcInfo.IsCreate = FALSE;
         msg.ProcInfo.ProcessId = (ULONG)(ULONG_PTR)ProcessId;
 
@@ -147,101 +136,97 @@ VOID ProcessNotifyEx( PEPROCESS Process, HANDLE ProcessId, PPS_CREATE_NOTIFY_INF
             RtlStringCchCopyW( msg.ProcInfo.ImageName, 260, TName );
         else
             RtlStringCchCopyW( msg.ProcInfo.ImageName, 260, L"<Unknown Process>" );
-        DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
-            "[Terminate] Type: %d, PID: %lu, ImageName: %ws\n",
-            msg.Type,
-            msg.ProcInfo.ProcessId,
-            msg.ProcInfo.ImageName );
     }
 
     FltSendMessage( gFilterHandle, &gClientPort, &msg, sizeof( GENERIC_MESSAGE ), NULL, NULL, &TimeOut );
 }
 
-//¿ŒΩ∫≈œΩ∫ ø¨∞· «‘ºˆ
 NTSTATUS InstanceSetupCallback( PCFLT_RELATED_OBJECTS FltObjects, FLT_INSTANCE_SETUP_FLAGS Flags, DEVICE_TYPE VolumeDeviceType, FLT_FILESYSTEM_TYPE VolumeFilesystemType )
 {
-    DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "[+] ¿ŒΩ∫≈œΩ∫ ø¨∞·µ \n" );
+    UNREFERENCED_PARAMETER(Flags);
+    UNREFERENCED_PARAMETER(VolumeDeviceType);
+    UNREFERENCED_PARAMETER(VolumeFilesystemType);
 
     return STATUS_SUCCESS;
 }
 
-// ∆˜∆Æ ø¨∞· ƒ›πÈ
 NTSTATUS PortConnect( PFLT_PORT ClientPort, PVOID ServerPortCookie, PVOID ConnectionContext, ULONG SizeOfContext, PVOID* ConnectionCookie )
 {
     gClientPort = ClientPort;
-    DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "[+] ∆˜∆Æ ø¨∞·µ \n" );
+    DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "[+] Ìè¨Ìä∏ Ïó∞Í≤∞Îê®\n" );
     return STATUS_SUCCESS;
 }
 
-// ∆˜∆Æ ø¨∞· «ÿ¡¶ ƒ›πÈ
+// Ìè¨Ìä∏ Ïó∞Í≤∞ Ìï¥Ï†ú ÏΩúÎ∞±
 VOID PortDisconnect( PVOID ConnectionCookie )
 {
-    //UserConsole∞˙ ≈ÎΩ≈ ∆˜∆Æ∞° ø¨∞· µ«æ˙¥Ÿ∏È Ω««‡
     if( gClientPort != NULL ) {
-        FltCloseClientPort( gFilterHandle, &gClientPort ); //ø¨∞·µ» ∆˜∆Æ ¥›±‚
-        gClientPort = NULL; //≈ÎΩ≈ ∆˜∆Æ √ ±‚»≠
+        FltCloseClientPort( gFilterHandle, &gClientPort );
+        gClientPort = NULL;
     }
-    DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "[-] ∆˜∆Æ ø¨∞· «ÿ¡¶\n" );
+    DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "[-] Ìè¨Ìä∏ Ïó∞Í≤∞ Ìï¥Ï†ú\n" );
 }
 
 // IRP_MJ_CREATE PreCallback
 FLT_PREOP_CALLBACK_STATUS PreCreateCallback( PFLT_CALLBACK_DATA Data, PCFLT_RELATED_OBJECTS FltObjects, PVOID* CompletionContext )
 {
-    if( gClientPort == NULL ) //UserConsole∞˙ ≈ÎΩ≈ ∆˜∆Æ∞° ø¨∞·µ«¡ˆ æ ¿∫ ∞ÊøÏ ∏ﬁºº¡ˆ∏¶ ∫∏≥æ ºˆ æ¯¿∏π«∑Œ ¡æ∑·
+    if( gClientPort == NULL )
         return FLT_PREOP_SUCCESS_WITH_CALLBACK;
 
     GENERIC_MESSAGE MSG = {};
     MSG.Type = MessageTypeIrpCreate;
-    MSG.IrpInfo.IsPost = FALSE; //Pre∂Û¥¬ ∞Õ¿ª «•Ω√
+    MSG.IrpInfo.IsPost = FALSE;
 
     PFLT_FILE_NAME_INFORMATION nameInfo;
-    //«ˆ¿Á ø‰√ªµ» ∆ƒ¿œ¿« ∞Ê∑Œ ¡§∫∏∏¶ ∞°¡Æø». FLT_FILE_NAME_NORMALIZED: ¡§±‘»≠µ» ∆ƒ¿œ ∞Ê∑Œ, FLT_FILE_NAME_QUERY_DEFAULT: Ω√Ω∫≈€¿Ã ∆«¥‹«— ∆ƒ¿œ ¿Ã∏ß.
+    WCHAR ShortName[260] = L"<Unknown>";
+    
     if( NT_SUCCESS( FltGetFileNameInformation( Data, FLT_FILE_NAME_NORMALIZED | FLT_FILE_NAME_QUERY_DEFAULT, &nameInfo ) ) ) {
-        FltParseFileNameInformation( nameInfo ); //nameInfo ±∏¡∂√º¿« ∏‚πˆµÈ¿ª ∆ƒΩÃ«ÿº≠ .Volume, .FinalComponent, .Extension µÓ¿∏∑Œ ∫–∏Æ.
-        RtlStringCchCopyW( MSG.IrpInfo.ImageName, 260, nameInfo->Name.Buffer );
-        FltReleaseFileNameInformation( nameInfo ); //FltGetFilaNameInformation¿∏∑Œ «“¥Áµ» ∏ﬁ∏∏Æ «ÿ¡¶
+        FltParseFileNameInformation( nameInfo );
+        ExtractFileName(nameInfo->Name.Buffer, ShortName, 260);
+        RtlStringCchCopyW( MSG.IrpInfo.ImageName, 260, ShortName);
+        FltReleaseFileNameInformation( nameInfo );
     }
     else {
         RtlStringCchCopyW( MSG.IrpInfo.ImageName, 260, L"<Unknown>" );
     }
 
-    // µÂ∂Û¿Ãπˆø°º≠ UserConsole∑Œ ∏ﬁΩ√¡ˆ∏¶ ¿¸º€. &info(IRP_CREATE_INFO): ¿¸º€«“ µ•¿Ã≈Õ ±∏¡∂√º. UserConsoleø°º≠ FilterGetMessage()∑Œ ºˆΩ≈
     FltSendMessage( gFilterHandle, &gClientPort, &MSG, sizeof( MSG ), NULL, NULL, NULL );
 
-    return FLT_PREOP_SUCCESS_WITH_CALLBACK; //¿Ã ø‰√ªø° ¥Î«ÿ √ﬂ∞° √≥∏Æ∏¶ «œ¡ˆ æ ∞⁄¥Ÿ∞Ì π›»Ø
+    return FLT_PREOP_SUCCESS_WITH_CALLBACK;
 }
 
 // IRP_MJ_CREATE PostCallback
 FLT_POSTOP_CALLBACK_STATUS PostCreateCallback( PFLT_CALLBACK_DATA Data, PCFLT_RELATED_OBJECTS FltObjects, PVOID CompletionContext, FLT_POST_OPERATION_FLAGS Flags )
 {
-    if( gClientPort == NULL ) //UserConsole∞˙ ≈ÎΩ≈ ∆˜∆Æ∞° ø¨∞·µ«¡ˆ æ ¿∫ ∞ÊøÏ ∏ﬁºº¡ˆ∏¶ ∫∏≥æ ºˆ æ¯¿∏π«∑Œ ¡æ∑·
+    if( gClientPort == NULL )
         return FLT_POSTOP_FINISHED_PROCESSING;
 
     GENERIC_MESSAGE MSG = {};
     MSG.Type = MessageTypeIrpCreate;
 	MSG.IrpInfo.IsPost = TRUE;
-    MSG.IrpInfo.ResultStatus = Data->IoStatus.Status; //ResultStatusø° IRP√≥∏Æ ∞·∞˙∏¶ ¿˙¿Â (ex. STATUS_SUCCESS, STATUS_ACCESS_DENIED µÓ)
+    MSG.IrpInfo.ResultStatus = Data->IoStatus.Status;
 
     PFLT_FILE_NAME_INFORMATION nameInfo;
-    //«ˆ¿Á ø‰√ªµ» ∆ƒ¿œ¿« ∞Ê∑Œ ¡§∫∏∏¶ ∞°¡Æø». FLT_FILE_NAME_NORMALIZED: ¡§±‘»≠µ» ∆ƒ¿œ ∞Ê∑Œ, FLT_FILE_NAME_QUERY_DEFAULT: Ω√Ω∫≈€¿Ã ∆«¥‹«— ∆ƒ¿œ ¿Ã∏ß.
+    WCHAR ShortName[260] = L"<Unknown>";
+ 
     if( NT_SUCCESS( FltGetFileNameInformation( Data, FLT_FILE_NAME_NORMALIZED | FLT_FILE_NAME_QUERY_DEFAULT, &nameInfo ) ) ) {
-        FltParseFileNameInformation( nameInfo ); //nameInfo ±∏¡∂√º¿« ∏‚πˆµÈ¿ª ∆ƒΩÃ«ÿº≠ .Volume, .FinalComponent, .Extension µÓ¿∏∑Œ ∫–∏Æ.
-        RtlStringCchCopyW( MSG.IrpInfo.ImageName, 260, nameInfo->Name.Buffer ); //æ»¿¸«œ∞‘ πÆ¿⁄ø≠¿ª ∫πªÁ, 260¿∫ √÷¥Î ∞Ê∑Œ ±Ê¿Ã(MAX_PATH)
-        FltReleaseFileNameInformation( nameInfo ); //FltGetFilaNameInformation¿∏∑Œ «“¥Áµ» ∏ﬁ∏∏Æ «ÿ¡¶
+        FltParseFileNameInformation( nameInfo );
+        ExtractFileName(nameInfo->Name.Buffer, ShortName, 260);
+        RtlStringCchCopyW( MSG.IrpInfo.ImageName, 260, ShortName );
+        FltReleaseFileNameInformation( nameInfo );
     }
     else {
         RtlStringCchCopyW( MSG.IrpInfo.ImageName, 260, L"<Unknown>" );
     }
 
-    // µÂ∂Û¿Ãπˆø°º≠ UserConsole∑Œ ∏ﬁΩ√¡ˆ∏¶ ¿¸º€. &info(IRP_CREATE_INFO): ¿¸º€«“ µ•¿Ã≈Õ ±∏¡∂√º. UserConsoleø°º≠ FilterGetMessage()∑Œ ºˆΩ≈
     FltSendMessage( gFilterHandle, &gClientPort, &MSG, sizeof( MSG ), NULL, NULL, NULL );
 
-    return FLT_POSTOP_FINISHED_PROCESSING; //¿Ã ø‰√ªø° ¥Î«ÿ √ﬂ∞° √≥∏Æ∏¶ «œ¡ˆ æ ∞⁄¥Ÿ∞Ì π›»Ø
+    return FLT_POSTOP_FINISHED_PROCESSING;
 }
 
 // Operation Registration
 CONST FLT_OPERATION_REGISTRATION Callbacks[] = {
-    { IRP_MJ_CREATE, 0, PreCreateCallback, PostCreateCallback },//IRP_MJ_CREATE∑Œ¥¬ PreøÕ Post ƒ›πÈ
+    { IRP_MJ_CREATE, 0, PreCreateCallback, PostCreateCallback },
     { IRP_MJ_OPERATION_END }
 };
 
@@ -255,7 +240,7 @@ NTSTATUS DriverUnload( FLT_FILTER_UNLOAD_FLAGS Flags )
         FltUnregisterFilter( gFilterHandle );
 
     PsSetCreateProcessNotifyRoutineEx( ProcessNotifyEx, TRUE );
-    DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "[-] µÂ∂Û¿Ãπˆ æ∑Œµ˘ øœ∑·\n" );
+    DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "[-] ÎìúÎùºÏù¥Î≤Ñ Ïñ∏Î°úÎî© ÏôÑÎ£å\n" );
     return STATUS_SUCCESS;
 }
 
@@ -265,7 +250,6 @@ NTSTATUS DriverEntry( PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath 
 {
     NTSTATUS status;
 
-    //« ≈Õ µÓ∑œ
     FLT_REGISTRATION filterRegistration = {
         sizeof( FLT_REGISTRATION ),
         FLT_REGISTRATION_VERSION,
@@ -286,11 +270,11 @@ NTSTATUS DriverEntry( PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath 
     status = FltRegisterFilter( DriverObject, &filterRegistration, &gFilterHandle );
     if( !NT_SUCCESS( status ) ) 
     {
-        DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL, "FltRegisterFilter Ω«∆–: 0x%X\n", status );
+        DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL, "FltRegisterFilter Ïã§Ìå®: 0x%X\n", status );
         return status;
     }
 
-    DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "FltRegisterFilter º∫∞¯\n" );
+    DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "FltRegisterFilter ÏÑ±Í≥µ\n" );
 
     UNICODE_STRING uniName = RTL_CONSTANT_STRING( COMM_PORT_NAME );
     OBJECT_ATTRIBUTES oa;
@@ -299,14 +283,13 @@ NTSTATUS DriverEntry( PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath 
     status = FltBuildDefaultSecurityDescriptor( &sd, FLT_PORT_ALL_ACCESS );
     if( !NT_SUCCESS( status ) ) 
     {
-        DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL, "SecurityDescriptor ª˝º∫ Ω«∆–: 0x%X\n", status );
+        DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL, "SecurityDescriptor ÏÉùÏÑ± Ïã§Ìå®: 0x%X\n", status );
         FltUnregisterFilter( gFilterHandle );
         return status;
     }
 
     InitializeObjectAttributes( &oa, &uniName, OBJ_KERNEL_HANDLE | OBJ_CASE_INSENSITIVE, NULL, sd );
 
-    // UserConsole ƒøπ¬¥œƒ…¿Ãº« ∆˜∆Æ µÓ∑œ
     status = FltCreateCommunicationPort(
         gFilterHandle,
         &gServerPort,
@@ -318,21 +301,21 @@ NTSTATUS DriverEntry( PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath 
         1
     );
 
-    FltFreeSecurityDescriptor( sd ); //DriverøÕ UserMode æ»¿¸ ø¨∞·
+    FltFreeSecurityDescriptor( sd );
 
     if( !NT_SUCCESS( status ) ) 
     {
-        DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL, "FltCreateCommunicationPort Ω«∆–: 0x%X\n", status );
+        DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL, "FltCreateCommunicationPort Ïã§Ìå®: 0x%X\n", status );
         FltUnregisterFilter( gFilterHandle );
         return status;
     }
 
-    DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "FltCreateCommunicationPort º∫∞¯\n" );
+    DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "FltCreateCommunicationPort ÏÑ±Í≥µ\n" );
 
     status = FltStartFiltering( gFilterHandle );
     if( !NT_SUCCESS( status ) ) 
     {
-        DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL, "FltStartFiltering Ω«∆–: 0x%X\n", status );
+        DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL, "FltStartFiltering Ïã§Ìå®: 0x%X\n", status );
         FltCloseCommunicationPort( gServerPort );
         FltUnregisterFilter( gFilterHandle );
         return status;
@@ -344,11 +327,11 @@ NTSTATUS DriverEntry( PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath 
     status = PsSetCreateProcessNotifyRoutineEx( ProcessNotifyEx, FALSE );
     if( !NT_SUCCESS( status ) ) 
     {
-        DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL, "ProcessNotify µÓ∑œ Ω«∆–: 0x%X\n", status );
+        DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL, "ProcessNotify Îì±Î°ù Ïã§Ìå®: 0x%X\n", status );
         return status;
     }
 
-    DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "FltStartFiltering º∫∞¯ - µÂ∂Û¿Ãπˆ ∑Œµ˘ øœ∑·\n" );
+    DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "FltStartFiltering ÏÑ±Í≥µ - ÎìúÎùºÏù¥Î≤Ñ Î°úÎî© ÏôÑÎ£å\n" );
 
     return STATUS_SUCCESS;
 }
