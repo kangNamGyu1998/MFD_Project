@@ -11,6 +11,7 @@
 ### ⚙️ 개선 사항
 - 유저콘솔 종료 시 시스템 멈춤 현상 완화 (`PortDisconnect` → `gClientPort = NULL` 처리)
 - 프로세스 종료 시 `<Unknown Terminate>` 메시지도 로그에 출력되도록 처리
+- UserConsole에 _wsetlocale을 사용해 한글을 출력할 수 있게 개선
 
 ---
 
