@@ -11,5 +11,5 @@
 ## 실행 방법
 1. `bcdedit /set testsigning on` 후 재부팅
 2. 드라이버 빌드 후 C:\Windows\System32\drivers로 파일 이동.
-3. fltmc load MFD로 드라이버 로딩 후 fltmc attach MFD C:로 드라이버 인스턴스 연결
+3. fltmc load MFD로 드라이버 로딩
 4. UserConsole을 관리자 모드로 실행
