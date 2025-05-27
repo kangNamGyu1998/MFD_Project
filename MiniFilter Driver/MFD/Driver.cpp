@@ -9,7 +9,7 @@ PFLT_PORT gClientPort = NULL;
 
 LARGE_INTEGER TimeOut;
 
-#pragma pack(push, 1)
+#pragma pack( push, 1 )
 typedef struct _PROCESS_NAME_RECORD {
     ULONG Pid;
     LIST_ENTRY Entry;
@@ -44,33 +44,48 @@ typedef struct _GENERIC_MESSAGE {
         PROC_EVENT_INFO ProcInfo;
     };
 } GENERIC_MESSAGE, * PGENERIC_MESSAGE;
-#pragma pack(pop)
+#pragma pack( pop )
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-VOID ExtractFileName( const WCHAR* fullPath, WCHAR* outFileName, SIZE_T outLen )
+VOID ExtractFileName( const UNICODE_STRING* fullPath, WCHAR* outFileName, SIZE_T outLen )
 {
-    if( fullPath == NULL || outFileName == NULL )
+    if ( fullPath == NULL || outFileName == NULL )
         return;
 
-    const WCHAR* lastSlash = fullPath;
-    const WCHAR* p = fullPath;
+    USHORT len = fullPath->Length / sizeof( WCHAR );
 
-    while( *p != L'\0' ) {
-        if( *p == L'\\' || *p == L'/' )
+    WCHAR* result = ( WCHAR* )ExAllocatePoolWithTag( NonPagedPool, ( len + 1 ) * sizeof( WCHAR ), 'u2wT' );
+    if ( result == NULL )
+        return;
+
+    RtlCopyMemory( result, fullPath->Buffer, fullPath->Length );
+
+    result[ len ] = L'\0';
+
+    const WCHAR* lastSlash = result;
+    const WCHAR* p = result;
+
+    while ( *p != L'\0' )
+    {
+        if ( *p == L'\\' || *p == L'/' )
             lastSlash = p + 1;
         p++;
     }
 
     RtlStringCchCopyW( outFileName, outLen, lastSlash );
+    ExFreePoolWithTag( result, 'u2wT' );
 }
 
-VOID SaveProcessName( ULONG pid, const WCHAR* InName ) {
-    PROCESS_NAME_RECORD* rec = (PROCESS_NAME_RECORD*)ExAllocatePoolWithTag( NonPagedPool, sizeof( PROCESS_NAME_RECORD ), 'prnm' );
-	if( rec == NULL )
+VOID SaveProcessName( ULONG pid, const WCHAR* InName )
+{
+    PROCESS_NAME_RECORD* rec = ( PROCESS_NAME_RECORD* )ExAllocatePoolWithTag( NonPagedPool, sizeof( PROCESS_NAME_RECORD ), 'prnm' );
+    if ( rec == NULL )
         return;
 
-    rec->Pid = pid; //���� �Ҵ�� �޸𸮿� PID ����
+    RtlZeroMemory( rec, sizeof( *rec ) );
+
+    rec->Pid = pid;
     RtlStringCchCopyW( rec->ProcessName, 260, InName );
 
     ExAcquireFastMutex( &g_ProcessListLock );
@@ -78,14 +93,17 @@ VOID SaveProcessName( ULONG pid, const WCHAR* InName ) {
     ExReleaseFastMutex( &g_ProcessListLock );
 }
 
-BOOLEAN FindProcessName( ULONG pid, WCHAR* OutName ) {
+BOOLEAN FindProcessName( ULONG pid, WCHAR* OutName )
+{
     BOOLEAN found = FALSE;
 
     ExAcquireFastMutex( &g_ProcessListLock );
 
-    for( PLIST_ENTRY p = g_ProcessNameList.Flink; p != &g_ProcessNameList; p = p->Flink ) {
+    for ( PLIST_ENTRY p = g_ProcessNameList.Flink; p != &g_ProcessNameList; p = p->Flink )
+    {
         PROCESS_NAME_RECORD* rec = CONTAINING_RECORD( p, PROCESS_NAME_RECORD, Entry );
-        if( rec->Pid == pid ) {
+        if ( rec->Pid == pid )
+        {
             RtlStringCchCopyW( OutName, 260, rec->ProcessName );
             RemoveEntryList( p );
             ExFreePoolWithTag( rec, 'prnm' );
@@ -103,36 +121,38 @@ VOID ProcessNotifyEx( PEPROCESS Process, HANDLE ProcessId, PPS_CREATE_NOTIFY_INF
 {
     UNREFERENCED_PARAMETER( Process );
 
-    if( gClientPort == NULL )
+    if ( gClientPort == NULL )
         return;
 
     GENERIC_MESSAGE msg = {};
     msg.Type = MessageTypeProcEvent;
     TimeOut.QuadPart = -10 * 1000 * 1000;
 
-    if( CreateInfo != NULL && CreateInfo->ImageFileName->Length< 260 * sizeof(WCHAR) ) {
+    if ( CreateInfo != NULL && CreateInfo->ImageFileName->Length < 260 * sizeof( WCHAR ) )
+    {
         msg.ProcInfo.IsCreate = TRUE;
-        msg.ProcInfo.ProcessId = (ULONG)(ULONG_PTR)ProcessId;
-        msg.ProcInfo.ParentProcessId = (ULONG)(ULONG_PTR)CreateInfo->ParentProcessId;
+        msg.ProcInfo.ProcessId = ( ULONG )( ULONG_PTR )ProcessId;
+        msg.ProcInfo.ParentProcessId = ( ULONG )( ULONG_PTR )CreateInfo->ParentProcessId;
 
-        if( CreateInfo->ImageFileName != NULL ) 
+        if ( CreateInfo->ImageFileName != NULL )
         {
-            WCHAR ShortName[260] = L"<Unknown>";
-            ExtractFileName( CreateInfo->ImageFileName->Buffer, ShortName, 259 );
-            RtlStringCchCopyW( msg.ProcInfo.ImageName, 259, ShortName );
-            SaveProcessName( (ULONG)(ULONG_PTR)ProcessId, ShortName );
+            WCHAR ShortName[ 260 ] = L"<Unknown>";
+            ExtractFileName( CreateInfo->ImageFileName, ShortName, 260 );
+            RtlStringCchCopyW( msg.ProcInfo.ImageName, 260, ShortName );
+            SaveProcessName( ( ULONG )( ULONG_PTR )ProcessId, ShortName );
         }
         else
         {
             RtlStringCchCopyW( msg.ProcInfo.ImageName, 260, L"<Unknown>" );
         }
     }
-    else {
+    else
+    {
         msg.ProcInfo.IsCreate = FALSE;
-        msg.ProcInfo.ProcessId = (ULONG)(ULONG_PTR)ProcessId;
+        msg.ProcInfo.ProcessId = ( ULONG )( ULONG_PTR )ProcessId;
 
         WCHAR TName[ 260 ] = L"<Unknown>";
-        if( FindProcessName( msg.ProcInfo.ProcessId, TName ) )
+        if ( FindProcessName( msg.ProcInfo.ProcessId, TName ) )
             RtlStringCchCopyW( msg.ProcInfo.ImageName, 260, TName );
         else
             RtlStringCchCopyW( msg.ProcInfo.ImageName, 260, L"<Unknown Process>" );
@@ -143,9 +163,9 @@ VOID ProcessNotifyEx( PEPROCESS Process, HANDLE ProcessId, PPS_CREATE_NOTIFY_INF
 
 NTSTATUS InstanceSetupCallback( PCFLT_RELATED_OBJECTS FltObjects, FLT_INSTANCE_SETUP_FLAGS Flags, DEVICE_TYPE VolumeDeviceType, FLT_FILESYSTEM_TYPE VolumeFilesystemType )
 {
-    UNREFERENCED_PARAMETER(Flags);
-    UNREFERENCED_PARAMETER(VolumeDeviceType);
-    UNREFERENCED_PARAMETER(VolumeFilesystemType);
+    UNREFERENCED_PARAMETER( Flags );
+    UNREFERENCED_PARAMETER( VolumeDeviceType );
+    UNREFERENCED_PARAMETER( VolumeFilesystemType );
 
     return STATUS_SUCCESS;
 }
@@ -153,24 +173,25 @@ NTSTATUS InstanceSetupCallback( PCFLT_RELATED_OBJECTS FltObjects, FLT_INSTANCE_S
 NTSTATUS PortConnect( PFLT_PORT ClientPort, PVOID ServerPortCookie, PVOID ConnectionContext, ULONG SizeOfContext, PVOID* ConnectionCookie )
 {
     gClientPort = ClientPort;
-    DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "[+] 포트 연결됨\n" );
+    DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "[ + ] 포트 연결됨\n" );
     return STATUS_SUCCESS;
 }
 
 // 포트 연결 해제 콜백
 VOID PortDisconnect( PVOID ConnectionCookie )
 {
-    if( gClientPort != NULL ) {
+    if ( gClientPort != NULL )
+    {
         FltCloseClientPort( gFilterHandle, &gClientPort );
         gClientPort = NULL;
     }
-    DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "[-] 포트 연결 해제\n" );
+    DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "[ - ] 포트 연결 해제\n" );
 }
 
 // IRP_MJ_CREATE PreCallback
 FLT_PREOP_CALLBACK_STATUS PreCreateCallback( PFLT_CALLBACK_DATA Data, PCFLT_RELATED_OBJECTS FltObjects, PVOID* CompletionContext )
 {
-    if( gClientPort == NULL )
+    if ( gClientPort == NULL )
         return FLT_PREOP_SUCCESS_WITH_CALLBACK;
 
     GENERIC_MESSAGE MSG = {};
@@ -178,15 +199,17 @@ FLT_PREOP_CALLBACK_STATUS PreCreateCallback( PFLT_CALLBACK_DATA Data, PCFLT_RELA
     MSG.IrpInfo.IsPost = FALSE;
 
     PFLT_FILE_NAME_INFORMATION nameInfo;
-    WCHAR ShortName[260] = L"<Unknown>";
-    
-    if( NT_SUCCESS( FltGetFileNameInformation( Data, FLT_FILE_NAME_NORMALIZED | FLT_FILE_NAME_QUERY_DEFAULT, &nameInfo ) ) ) {
+    WCHAR ShortName[ 260 ] = L"<Unknown>";
+
+    if ( NT_SUCCESS( FltGetFileNameInformation( Data, FLT_FILE_NAME_NORMALIZED | FLT_FILE_NAME_QUERY_DEFAULT, &nameInfo ) ) )
+    {
         FltParseFileNameInformation( nameInfo );
-        ExtractFileName(nameInfo->Name.Buffer, ShortName, 260);
-        RtlStringCchCopyW( MSG.IrpInfo.ImageName, 260, ShortName);
+        ExtractFileName( &nameInfo->Name, ShortName, 260 );
+        RtlStringCchCopyW( MSG.IrpInfo.ImageName, 260, ShortName );
         FltReleaseFileNameInformation( nameInfo );
     }
-    else {
+    else
+    {
         RtlStringCchCopyW( MSG.IrpInfo.ImageName, 260, L"<Unknown>" );
     }
 
@@ -198,24 +221,26 @@ FLT_PREOP_CALLBACK_STATUS PreCreateCallback( PFLT_CALLBACK_DATA Data, PCFLT_RELA
 // IRP_MJ_CREATE PostCallback
 FLT_POSTOP_CALLBACK_STATUS PostCreateCallback( PFLT_CALLBACK_DATA Data, PCFLT_RELATED_OBJECTS FltObjects, PVOID CompletionContext, FLT_POST_OPERATION_FLAGS Flags )
 {
-    if( gClientPort == NULL )
+    if ( gClientPort == NULL )
         return FLT_POSTOP_FINISHED_PROCESSING;
 
     GENERIC_MESSAGE MSG = {};
     MSG.Type = MessageTypeIrpCreate;
-	MSG.IrpInfo.IsPost = TRUE;
+    MSG.IrpInfo.IsPost = TRUE;
     MSG.IrpInfo.ResultStatus = Data->IoStatus.Status;
 
     PFLT_FILE_NAME_INFORMATION nameInfo;
-    WCHAR ShortName[260] = L"<Unknown>";
- 
-    if( NT_SUCCESS( FltGetFileNameInformation( Data, FLT_FILE_NAME_NORMALIZED | FLT_FILE_NAME_QUERY_DEFAULT, &nameInfo ) ) ) {
+    WCHAR ShortName[ 260 ] = L"<Unknown>";
+
+    if ( NT_SUCCESS( FltGetFileNameInformation( Data, FLT_FILE_NAME_NORMALIZED | FLT_FILE_NAME_QUERY_DEFAULT, &nameInfo ) ) )
+    {
         FltParseFileNameInformation( nameInfo );
-        ExtractFileName(nameInfo->Name.Buffer, ShortName, 260);
+        ExtractFileName( &nameInfo->Name, ShortName, 260 );
         RtlStringCchCopyW( MSG.IrpInfo.ImageName, 260, ShortName );
         FltReleaseFileNameInformation( nameInfo );
     }
-    else {
+    else
+    {
         RtlStringCchCopyW( MSG.IrpInfo.ImageName, 260, L"<Unknown>" );
     }
 
@@ -225,7 +250,7 @@ FLT_POSTOP_CALLBACK_STATUS PostCreateCallback( PFLT_CALLBACK_DATA Data, PCFLT_RE
 }
 
 // Operation Registration
-CONST FLT_OPERATION_REGISTRATION Callbacks[] = {
+CONST FLT_OPERATION_REGISTRATION Callbacks[ ] = {
     { IRP_MJ_CREATE, 0, PreCreateCallback, PostCreateCallback },
     { IRP_MJ_OPERATION_END }
 };
@@ -233,14 +258,14 @@ CONST FLT_OPERATION_REGISTRATION Callbacks[] = {
 // Unload
 NTSTATUS DriverUnload( FLT_FILTER_UNLOAD_FLAGS Flags )
 {
-    if( gServerPort != NULL )
+    if ( gServerPort != NULL )
         FltCloseCommunicationPort( gServerPort );
 
-    if( gFilterHandle != NULL )
+    if ( gFilterHandle != NULL )
         FltUnregisterFilter( gFilterHandle );
 
     PsSetCreateProcessNotifyRoutineEx( ProcessNotifyEx, TRUE );
-    DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "[-] 드라이버 언로딩 완료\n" );
+    DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "[ - ] 드라이버 언로딩 완료\n" );
     return STATUS_SUCCESS;
 }
 
@@ -268,7 +293,7 @@ NTSTATUS DriverEntry( PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath 
     };
 
     status = FltRegisterFilter( DriverObject, &filterRegistration, &gFilterHandle );
-    if( !NT_SUCCESS( status ) ) 
+    if ( !NT_SUCCESS( status ) )
     {
         DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL, "FltRegisterFilter 실패: 0x%X\n", status );
         return status;
@@ -281,7 +306,7 @@ NTSTATUS DriverEntry( PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath 
     PSECURITY_DESCRIPTOR sd = NULL;
 
     status = FltBuildDefaultSecurityDescriptor( &sd, FLT_PORT_ALL_ACCESS );
-    if( !NT_SUCCESS( status ) ) 
+    if ( !NT_SUCCESS( status ) )
     {
         DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL, "SecurityDescriptor 생성 실패: 0x%X\n", status );
         FltUnregisterFilter( gFilterHandle );
@@ -290,7 +315,7 @@ NTSTATUS DriverEntry( PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath 
 
     InitializeObjectAttributes( &oa, &uniName, OBJ_KERNEL_HANDLE | OBJ_CASE_INSENSITIVE, NULL, sd );
 
-    status = FltCreateCommunicationPort(
+    status = FltCreateCommunicationPort( 
         gFilterHandle,
         &gServerPort,
         &oa,
@@ -303,7 +328,7 @@ NTSTATUS DriverEntry( PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath 
 
     FltFreeSecurityDescriptor( sd );
 
-    if( !NT_SUCCESS( status ) ) 
+    if ( !NT_SUCCESS( status ) )
     {
         DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL, "FltCreateCommunicationPort 실패: 0x%X\n", status );
         FltUnregisterFilter( gFilterHandle );
@@ -313,7 +338,7 @@ NTSTATUS DriverEntry( PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath 
     DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "FltCreateCommunicationPort 성공\n" );
 
     status = FltStartFiltering( gFilterHandle );
-    if( !NT_SUCCESS( status ) ) 
+    if ( !NT_SUCCESS( status ) )
     {
         DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL, "FltStartFiltering 실패: 0x%X\n", status );
         FltCloseCommunicationPort( gServerPort );
@@ -325,7 +350,7 @@ NTSTATUS DriverEntry( PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath 
     InitializeListHead( &g_ProcessNameList );
 
     status = PsSetCreateProcessNotifyRoutineEx( ProcessNotifyEx, FALSE );
-    if( !NT_SUCCESS( status ) ) 
+    if ( !NT_SUCCESS( status ) )
     {
         DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL, "ProcessNotify 등록 실패: 0x%X\n", status );
         return status;
