@@ -3,18 +3,12 @@
 #include <winternl.h>
 #include <fltuser.h>
 #include <locale.h>
-#pragma comment(lib, "FltLib.lib")
+#pragma comment( lib, "FltLib.lib" )
+#pragma comment( lib, "ntdll.lib" )
 
 #define COMM_PORT_NAME L"\\MFDPort"
 
 #pragma pack( push ,1 )
-
-typedef struct _IRP_CREATE_INFO {
-    BOOLEAN IsPost;  // FALSE: Pre, TRUE: Post
-    NTSTATUS ResultStatus;
-    WCHAR FileName[ 260 ];
-} IRP_CREATE_INFO, * PIRP_CREATE_INFO;
-
 typedef struct _PROC_EVENT_INFO {
     BOOLEAN IsCreate;
     ULONG ProcessId;
@@ -27,10 +21,20 @@ typedef enum _MESSAGE_TYPE {
     MessageTypeProcEvent
 } MESSAGE_TYPE;
 
+typedef struct _IRP_CONTEXT {
+    BOOLEAN IsPost;
+    ULONG ProcessId;
+    ULONG ParentProcessId;
+    WCHAR ProcName[260];
+    WCHAR FileName[260];
+    NTSTATUS CreateOptions;
+    NTSTATUS ResultStatus;
+} IRP_CONTEXT, * PIRP_CONTEXT;
+
 typedef struct _GENERIC_MESSAGE {
     MESSAGE_TYPE Type;
     union {
-        IRP_CREATE_INFO IrpInfo;
+        IRP_CONTEXT IrpInfo;
         PROC_EVENT_INFO ProcInfo;
     };
 } GENERIC_MESSAGE, * PGENERIC_MESSAGE;
@@ -43,10 +47,10 @@ typedef struct _MESSAGE_BUFFER {
 
 //////////////////////////////////////////////////
 
-int main() {
-    _wsetlocale(LC_ALL, L"Korean");
+int main( ) {
+    _wsetlocale( LC_ALL, L"Korean" );
     HANDLE hPort = NULL;
-    HRESULT hr = FilterConnectCommunicationPort(
+    HRESULT hr = FilterConnectCommunicationPort( 
         COMM_PORT_NAME,
         0,
         NULL,
@@ -56,18 +60,18 @@ int main() {
     );
 
     if( FAILED( hr ) ) {
-        wprintf( L"[!] í¬íŠ¸ ì—°ê²°ì— ì‹¤íŒ¨í–ˆìŠµë‹ˆë‹¤: 0x%08X\n", hr );
+        wprintf( L"[ ! ] Æ÷Æ® ¿¬°á¿¡ ½ÇÆÐÇß½À´Ï´Ù: 0x%08X\n", hr );
         return 1;
     }
-    wprintf( L"[+] í¬íŠ¸ ì—°ê²°ì— ì„±ê³µí–ˆìŠµë‹ˆë‹¤.\n", hr );
+    wprintf( L"[ + ] Æ÷Æ® ¿¬°á¿¡ ¼º°øÇß½À´Ï´Ù.\n", hr );
 
-    wprintf( L"ìœ„ì¹˜: C:\\Dev\\UserConsole.exe\n" );
+    wprintf( L"À§Ä¡: C:\\Dev\\UserConsole.exe\n" );
     wprintf( L"Connect MiniFilter...\n" );
 
     while( true ) {
         MESSAGE_BUFFER messageBuffer = { 0 };
 
-        hr = FilterGetMessage(
+        hr = FilterGetMessage( 
             hPort,
             &messageBuffer.MessageHeader,
             sizeof( messageBuffer ),
@@ -75,7 +79,7 @@ int main() {
         );
 
         if( FAILED( hr ) ) {
-            wprintf( L"[!] ë“œë¼ì´ë²„ë¡œë¶€í„° ë©”ì„¸ì§€ ë°›ì•„ì˜¤ê¸° ì‹¤íŒ¨: 0x%08X\n", hr );
+            wprintf( L"[ ! ] µå¶óÀÌ¹ö·ÎºÎÅÍ ¸Þ¼¼Áö ¹Þ¾Æ¿À±â ½ÇÆÐ: 0x%08X\n", hr );
             break;
         }
 
@@ -87,27 +91,32 @@ int main() {
         case MessageTypeIrpCreate: {
             if (IrpInfo->IsPost)
             {
-                wprintf( L"IRP : IRP_MJ_CREATE, Type : Post, File : %ws, Result : %.259ws\n",  IrpInfo->FileName, NT_SUCCESS( IrpInfo->ResultStatus ) ? L"Success" : L"Failure" );
-            }
-            else
-            {
-                wprintf( L"IRP : IRP_MJ_CREATE, Type : Pre, File : %.259ws\n", IrpInfo->FileName );
-            }
-        }break;
-        case MessageTypeProcEvent: {
-            if (ProcpInfo->IsCreate)
-            {
-                wprintf(L"IRP : Proc Created, PID : %lu, ParentPID : %lu, Name : %.259ws\n", ProcpInfo->ProcessId, ProcpInfo->ParentProcessId, ProcpInfo->ImageName);
-            }
-            else
-            {
-                wprintf(L"IRP : Proc Terminated, PID : %lu, Name : %.259ws\n", ProcpInfo->ProcessId, ProcpInfo->ImageName);
-            }
-        }break;
-        default: {
-            wprintf(L"[!] ì•Œ ìˆ˜ ì—†ëŠ” ë©”ì‹œì§€ íƒ€ìž…: %d\n", messageBuffer.MessageBody.Type);
-	        }
+                WCHAR errMsg[128] = L"";
+                DWORD winErr = RtlNtStatusToDosError(IrpInfo->ResultStatus);
+                FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+                    NULL, winErr, 0, errMsg, 128, NULL);
+                errMsg[wcslen(errMsg) - 2] = L'\0'; // \r\n Á¦°Å
 
+                wprintf(L"IRP : IRP_MJ_CREATE(Post), PID : %lu, ParentPID : %lu, Proc Name : %ws, File : %ws, Result : %ws\n",
+                    IrpInfo->ProcessId,
+                    IrpInfo->ParentProcessId,
+                    IrpInfo->ProcName,
+                    IrpInfo->FileName,
+                    errMsg);
+            }
+            else
+            {
+                wprintf(L"IRP : IRP_MJ_CREATE(Pre), PID : %lu, ParentPID : %lu, Proc Name : %ws, File : %ws, CreateOptions : 0x%08X\n",
+                    IrpInfo->ProcessId,
+                    IrpInfo->ParentProcessId,
+                    IrpInfo->ProcName,
+                    IrpInfo->FileName,
+                    IrpInfo->CreateOptions);
+            }
+        } break;
+        default: {
+            wprintf( L"[ ! ] ¾Ë ¼ö ¾ø´Â ¸Þ½ÃÁö Å¸ÀÔ: %d\n", messageBuffer.MessageBody.Type );
+	        }
 		}
     }
     CloseHandle( hPort );

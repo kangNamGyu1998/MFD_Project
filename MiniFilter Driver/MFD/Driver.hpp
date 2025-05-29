@@ -28,20 +28,20 @@ typedef enum _MESSAGE_TYPE {
     MessageTypeProcEvent
 } MESSAGE_TYPE;
 
-typedef struct _CREATE_INFO_CONTEXT {
+typedef struct _IRP_CONTEXT {
     BOOLEAN IsPost;
-    ULONG Pid;
-    ULONG ParentPid;
+    ULONG ProcessId;
+    ULONG ParentProcessId;
     WCHAR ProcName[260];
     WCHAR FileName[260];
     NTSTATUS CreateOptions;
-    NTSTATUS Status;
-} CREATE_INFO_CONTEXT, * PCREATE_INFO_CONTEXT;
+    NTSTATUS ResultStatus;
+} IRP_CONTEXT, * PIRP_CONTEXT;
 
 typedef struct _GENERIC_MESSAGE {
     MESSAGE_TYPE Type;
     union {
-        CREATE_INFO_CONTEXT IrpInfo;
+        IRP_CONTEXT IrpInfo;
         PROC_EVENT_INFO ProcInfo;
     };
 } GENERIC_MESSAGE, * PGENERIC_MESSAGE;
@@ -54,8 +54,6 @@ VOID ExtractFileName(const UNICODE_STRING* fullPath, WCHAR* outFileName, SIZE_T 
 VOID SaveProcessName(ULONG pid, ULONG parentpid, const WCHAR* InName);
 
 BOOLEAN RemoveProcessName(ULONG pid, WCHAR* OutName, ULONG* OutParentId);
-BOOLEAN SearchProcessName(ULONG pid, WCHAR* OutName, ULONG* OutParentId);
-
 extern "C" VOID ProcessNotifyEx(PEPROCESS Process, HANDLE ProcessId, PPS_CREATE_NOTIFY_INFO CreateInfo);
 
 NTSTATUS InstanceSetupCallback(PCFLT_RELATED_OBJECTS FltObjects, FLT_INSTANCE_SETUP_FLAGS Flags, DEVICE_TYPE VolumeDeviceType, FLT_FILESYSTEM_TYPE VolumeFilesystemType);
@@ -70,3 +68,56 @@ FLT_PREOP_CALLBACK_STATUS PreCreateCallback(PFLT_CALLBACK_DATA Data, PCFLT_RELAT
 
 // IRP_MJ_CREATE PostCallback
 FLT_POSTOP_CALLBACK_STATUS PostCreateCallback(PFLT_CALLBACK_DATA Data, PCFLT_RELATED_OBJECTS FltObjects, PVOID CompletionContext, FLT_POST_OPERATION_FLAGS Flags);
+
+enum TyEnBufferType
+{
+    BUFFER_UNKNOWN,
+    BUFFER_IRPCONTEXT,
+
+    BUFFER_FILENAME,
+    BUFFER_PROCNAME,
+
+    BUFFER_MSG_SEND,
+    BUFFER_MSG_REPLY,
+
+    ///////////////////////////////////////////////////////////////////////////
+
+    BUFFER_SWAP_READ = 100,
+    BUFFER_SWAP_READ_1024,      // 직접 지정하지 말 것
+    BUFFER_SWAP_READ_4096,      // 직접 지정하지 말 것
+    BUFFER_SWAP_READ_8192,      // 직접 지정하지 말 것
+    BUFFER_SWAP_READ_16384,     // 직접 지정하지 말 것
+    BUFFER_SWAP_READ_65536,     // 직접 지정하지 말 것
+
+    BUFFER_SWAP_WRITE = 200,
+    BUFFER_SWAP_WRITE_1024,     // 직접 지정하지 말 것
+    BUFFER_SWAP_WRITE_4096,     // 직접 지정하지 말 것
+    BUFFER_SWAP_WRITE_8192,     // 직접 지정하지 말 것
+    BUFFER_SWAP_WRITE_16384,    // 직접 지정하지 말 것
+    BUFFER_SWAP_WRITE_65536,    // 직접 지정하지 말 것
+};
+
+struct TyBaseBuffer
+{
+    TyEnBufferType      BufferType;
+    BOOLEAN             IsAllocatedFromLookasideList;
+    SIZE_T              BufferSize;
+    ULONG               PoolTag;
+
+    TyBaseBuffer() : BufferType(BUFFER_UNKNOWN)
+        , IsAllocatedFromLookasideList(FALSE)
+        , BufferSize(0)
+    {
+    }
+};
+
+template< typename T >
+struct TyGenericBuffer : public TyBaseBuffer
+{
+    T* Buffer;
+
+    TyGenericBuffer<T>() : TyBaseBuffer(), Buffer(nullptr)
+    {
+    }
+
+};
