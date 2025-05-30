@@ -136,6 +136,9 @@
   <ItemGroup>
     <ClCompile Include="Driver.cpp" />
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Driver.hpp" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

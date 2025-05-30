@@ -1,51 +1,25 @@
-#include <windows.h>
-#include <stdio.h>
-#include <winternl.h>
-#include <fltuser.h>
-#include <locale.h>
-#pragma comment( lib, "FltLib.lib" )
-#pragma comment( lib, "ntdll.lib" )
-
-#define COMM_PORT_NAME L"\\MFDPort"
-
-#pragma pack( push ,1 )
-typedef struct _PROC_EVENT_INFO {
-    BOOLEAN IsCreate;
-    ULONG ProcessId;
-    ULONG ParentProcessId;
-    WCHAR ImageName[ 260 ];
-} PROC_EVENT_INFO, * PPROC_EVENT_INFO;
-
-typedef enum _MESSAGE_TYPE {
-    MessageTypeIrpCreate,
-    MessageTypeProcEvent
-} MESSAGE_TYPE;
-
-typedef struct _IRP_CONTEXT {
-    BOOLEAN IsPost;
-    ULONG ProcessId;
-    ULONG ParentProcessId;
-    WCHAR ProcName[260];
-    WCHAR FileName[260];
-    NTSTATUS CreateOptions;
-    NTSTATUS ResultStatus;
-} IRP_CONTEXT, * PIRP_CONTEXT;
-
-typedef struct _GENERIC_MESSAGE {
-    MESSAGE_TYPE Type;
-    union {
-        IRP_CONTEXT IrpInfo;
-        PROC_EVENT_INFO ProcInfo;
-    };
-} GENERIC_MESSAGE, * PGENERIC_MESSAGE;
-
-typedef struct _MESSAGE_BUFFER {
-    FILTER_MESSAGE_HEADER MessageHeader;
-    GENERIC_MESSAGE       MessageBody;
-} MESSAGE_BUFFER, * PMESSAGE_BUFFER;
-#pragma pack( pop )
+#include "UserConsole.hpp"
 
 //////////////////////////////////////////////////
+
+void DescribeCreateOptions( ULONG options, WCHAR* buffer, size_t bufferLen )
+{
+    buffer[0] = L'\0';
+
+    bool first = true;
+    for (int i = 0; i < sizeof(flags) / sizeof(flags[0]); ++i)
+    {
+        if (options & flags[i].Flag)
+        {
+            if ( first == false ) wcsncat_s(buffer, bufferLen, L" | ", 3);
+            wcsncat_s(buffer, bufferLen, flags[i].Name, _TRUNCATE);
+            first = false;
+        }
+    }
+
+    if ( first == true )
+        wcsncpy_s(buffer, bufferLen, L"NONE", _TRUNCATE);
+}
 
 int main( ) {
     _wsetlocale( LC_ALL, L"Korean" );
@@ -60,12 +34,12 @@ int main( ) {
     );
 
     if( FAILED( hr ) ) {
-        wprintf( L"[ ! ] Æ÷Æ® ¿¬°á¿¡ ½ÇÆÐÇß½À´Ï´Ù: 0x%08X\n", hr );
+        wprintf( L"[ ! ] í¬íŠ¸ ì—°ê²°ì— ì‹¤íŒ¨í–ˆìŠµë‹ˆë‹¤: 0x%08X\n", hr );
         return 1;
     }
-    wprintf( L"[ + ] Æ÷Æ® ¿¬°á¿¡ ¼º°øÇß½À´Ï´Ù.\n", hr );
+    wprintf( L"[ + ] í¬íŠ¸ ì—°ê²°ì— ì„±ê³µí–ˆìŠµë‹ˆë‹¤.\n", hr );
 
-    wprintf( L"À§Ä¡: C:\\Dev\\UserConsole.exe\n" );
+    wprintf( L"ìœ„ì¹˜: C:\\Dev\\UserConsole.exe\n" );
     wprintf( L"Connect MiniFilter...\n" );
 
     while( true ) {
@@ -79,7 +53,7 @@ int main( ) {
         );
 
         if( FAILED( hr ) ) {
-            wprintf( L"[ ! ] µå¶óÀÌ¹ö·ÎºÎÅÍ ¸Þ¼¼Áö ¹Þ¾Æ¿À±â ½ÇÆÐ: 0x%08X\n", hr );
+            wprintf( L"[ ! ] ë“œë¼ì´ë²„ë¡œë¶€í„° ë©”ì„¸ì§€ ë°›ì•„ì˜¤ê¸° ì‹¤íŒ¨: 0x%08X\n", hr );
             break;
         }
 
@@ -95,7 +69,7 @@ int main( ) {
                 DWORD winErr = RtlNtStatusToDosError(IrpInfo->ResultStatus);
                 FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
                     NULL, winErr, 0, errMsg, 128, NULL);
-                errMsg[wcslen(errMsg) - 2] = L'\0'; // \r\n Á¦°Å
+                errMsg[wcslen(errMsg) - 2] = L'\0'; // \r\n ì œê±°
 
                 wprintf(L"IRP : IRP_MJ_CREATE(Post), PID : %lu, ParentPID : %lu, Proc Name : %ws, File : %ws, Result : %ws\n",
                     IrpInfo->ProcessId,
@@ -106,16 +80,20 @@ int main( ) {
             }
             else
             {
-                wprintf(L"IRP : IRP_MJ_CREATE(Pre), PID : %lu, ParentPID : %lu, Proc Name : %ws, File : %ws, CreateOptions : 0x%08X\n",
+                WCHAR optDesc[256] = L"";
+                DescribeCreateOptions(IrpInfo->CreateOptions, optDesc, ARRAYSIZE(optDesc));
+
+                wprintf(L"IRP : IRP_MJ_CREATE(Pre), PID : %lu, ParentPID : %lu, Proc Name : %ws, File : %ws, CreateOptions : 0x%08X (%s)\n",
                     IrpInfo->ProcessId,
                     IrpInfo->ParentProcessId,
                     IrpInfo->ProcName,
                     IrpInfo->FileName,
-                    IrpInfo->CreateOptions);
+                    IrpInfo->CreateOptions,
+                    optDesc);
             }
         } break;
         default: {
-            wprintf( L"[ ! ] ¾Ë ¼ö ¾ø´Â ¸Þ½ÃÁö Å¸ÀÔ: %d\n", messageBuffer.MessageBody.Type );
+            wprintf( L"[ ! ] ì•Œ ìˆ˜ ì—†ëŠ” ë©”ì‹œì§€ íƒ€ìž…: %d\n", messageBuffer.MessageBody.Type );
 	        }
 		}
     }
