@@ -10,7 +10,7 @@ typedef struct _PROCESS_NAME_RECORD {
     ULONG Pid;
     ULONG ParentPid;
     LIST_ENTRY Entry;
-    WCHAR ProcessName[260];
+    WCHAR ProcessName[ 260 ];
 } PROCESS_NAME_RECORD;
 
 LIST_ENTRY g_ProcessNameList;
@@ -20,7 +20,7 @@ typedef struct _PROC_EVENT_INFO {
     BOOLEAN IsCreate;
     ULONG ProcessId;
     ULONG ParentProcessId;
-    WCHAR ImageName[260];
+    WCHAR ImageName[ 260 ];
 } PROC_EVENT_INFO, * PPROC_EVENT_INFO;
 
 typedef enum _MESSAGE_TYPE {
@@ -32,8 +32,8 @@ typedef struct _IRP_CONTEXT {
     BOOLEAN IsPost;
     ULONG ProcessId;
     ULONG ParentProcessId;
-    WCHAR ProcName[260];
-    WCHAR FileName[260];
+    WCHAR ProcName[ 260 ];
+    WCHAR FileName[ 260 ];
     ULONG CreateOptions;
     NTSTATUS ResultStatus;
 } IRP_CONTEXT, * PIRP_CONTEXT;
@@ -78,25 +78,25 @@ LARGE_INTEGER TimeOut;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-VOID ExtractFileName(const UNICODE_STRING* fullPath, WCHAR* outFileName, SIZE_T outLen);
+VOID ExtractFileName( const UNICODE_STRING* fullPath, WCHAR* outFileName, SIZE_T outLen );
 
-VOID SaveProcessName(ULONG pid, ULONG parentpid, const WCHAR* InName);
+VOID SaveProcessName( ULONG pid, ULONG parentpid, const WCHAR* InName );
 
-NTSTATUS SearchProcessInfo(ULONG pid, WCHAR* OutName, ULONG* OutParentId);
-extern "C" VOID ProcessNotifyEx(PEPROCESS Process, HANDLE ProcessId, PPS_CREATE_NOTIFY_INFO CreateInfo);
+NTSTATUS SearchProcessInfo( ULONG pid, WCHAR* OutName, ULONG* OutParentId );
+extern "C" VOID ProcessNotifyEx( PEPROCESS Process, HANDLE ProcessId, PPS_CREATE_NOTIFY_INFO CreateInfo );
 
-NTSTATUS InstanceSetupCallback(PCFLT_RELATED_OBJECTS FltObjects, FLT_INSTANCE_SETUP_FLAGS Flags, DEVICE_TYPE VolumeDeviceType, FLT_FILESYSTEM_TYPE VolumeFilesystemType);
+NTSTATUS InstanceSetupCallback( PCFLT_RELATED_OBJECTS FltObjects, FLT_INSTANCE_SETUP_FLAGS Flags, DEVICE_TYPE VolumeDeviceType, FLT_FILESYSTEM_TYPE VolumeFilesystemType );
 
-NTSTATUS PortConnect(PFLT_PORT ClientPort, PVOID ServerPortCookie, PVOID ConnectionContext, ULONG SizeOfContext, PVOID* ConnectionCookie);
+NTSTATUS PortConnect( PFLT_PORT ClientPort, PVOID ServerPortCookie, PVOID ConnectionContext, ULONG SizeOfContext, PVOID* ConnectionCookie );
 
 // 포트 연결 해제 콜백
-VOID PortDisconnect(PVOID ConnectionCookie);
+VOID PortDisconnect( PVOID ConnectionCookie );
 
 // IRP_MJ_CREATE PreCallback
-FLT_PREOP_CALLBACK_STATUS PreCreateCallback(PFLT_CALLBACK_DATA Data, PCFLT_RELATED_OBJECTS FltObjects, PVOID* CompletionContext);
+FLT_PREOP_CALLBACK_STATUS PreCreateCallback( PFLT_CALLBACK_DATA Data, PCFLT_RELATED_OBJECTS FltObjects, PVOID* CompletionContext );
 
 // IRP_MJ_CREATE PostCallback
-FLT_POSTOP_CALLBACK_STATUS PostCreateCallback(PFLT_CALLBACK_DATA Data, PCFLT_RELATED_OBJECTS FltObjects, PVOID CompletionContext, FLT_POST_OPERATION_FLAGS Flags);
+FLT_POSTOP_CALLBACK_STATUS PostCreateCallback( PFLT_CALLBACK_DATA Data, PCFLT_RELATED_OBJECTS FltObjects, PVOID CompletionContext, FLT_POST_OPERATION_FLAGS Flags );
 
 enum TyEnBufferType
 {
@@ -133,9 +133,9 @@ struct TyBaseBuffer
     SIZE_T              BufferSize;
     ULONG               PoolTag;
 
-    TyBaseBuffer() : BufferType(BUFFER_UNKNOWN)
-        , IsAllocatedFromLookasideList(FALSE)
-        , BufferSize(0)
+    TyBaseBuffer() : BufferType( BUFFER_UNKNOWN )
+        , IsAllocatedFromLookasideList( FALSE )
+        , BufferSize( 0 )
     {
     }
 };
@@ -145,8 +145,7 @@ struct TyGenericBuffer : public TyBaseBuffer
 {
     T* Buffer;
 
-    TyGenericBuffer<T>() : TyBaseBuffer(), Buffer(nullptr)
+    TyGenericBuffer<T>() : TyBaseBuffer(), Buffer( nullptr )
     {
     }
-
 };
