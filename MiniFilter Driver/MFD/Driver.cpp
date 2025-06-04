@@ -65,30 +65,44 @@ NTSTATUS SearchProcessInfo( ULONG pid, WCHAR* OutName, ULONG* OutParentId )
 
     ExAcquireFastMutex( &g_ProcessListLock );
 
-	for ( PLIST_ENTRY p = g_ProcessNameList.Flink; p != &g_ProcessNameList; p = p->Flink )
-	{
-		PROCESS_NAME_RECORD* rec = CONTAINING_RECORD( p, PROCESS_NAME_RECORD, Entry );
-		if ( rec->Pid == pid )
-		{
-			DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
-                "[Search] Found PID=%lu, Name=%ws, PPID=%lu\n",
-                rec->Pid, rec->ProcessName, rec->ParentPid );
+    for ( PLIST_ENTRY p = g_ProcessNameList.Flink; p != &g_ProcessNameList; p = p->Flink ) 
+    {
+        PROCESS_NAME_RECORD* rec = CONTAINING_RECORD( p, PROCESS_NAME_RECORD, Entry );
+        if ( rec->Pid == pid ) 
+        {
+            if ( OutName != NULL )
+                RtlStringCchCopyW( OutName, 260, rec->ProcessName );
+            if ( OutParentId != NULL )
+                *OutParentId = rec->ParentPid;
 
-			if ( OutName != NULL )
-				RtlStringCchCopyW( OutName, 260, rec->ProcessName );
+            RemoveEntryList( p );
+            ExFreePoolWithTag( rec, 'prnm' );
 
-			if ( OutParentId != NULL )
-				*OutParentId = rec->ParentPid;
-
-			RemoveEntryList( p );
-			ExFreePoolWithTag( rec, 'prnm' );
-
-			Status = STATUS_SUCCESS;
-			break;
-            }
+            ExReleaseFastMutex( &g_ProcessListLock );
+            return STATUS_SUCCESS;
         }
+    }
 
     ExReleaseFastMutex( &g_ProcessListLock );
+
+    //Î¶¨Ïä§Ìä∏Ïóê ÏóÜÏùÑ Í≤ΩÏö∞ÏóêÎßå ÏßÅÏ†ë ÌôïÏù∏ ÏãúÎèÑ
+    PEPROCESS process = NULL;
+    if ( NT_SUCCESS( PsLookupProcessByProcessId( ( HANDLE )pid, &process ) ) ) {
+        PUNICODE_STRING imageName;
+        if ( NT_SUCCESS( SeLocateProcessImageName( process, &imageName ) ) ) {
+            if ( OutName != NULL )
+                ExtractFileName( imageName, OutName, 260 );
+            if ( OutParentId != NULL )
+            {
+                *OutParentId = (ULONG)PsGetProcessInheritedFromUniqueProcessId( process );
+            }
+				
+            ExFreePool( imageName );
+            Status = STATUS_SUCCESS;
+        }
+        ObDereferenceObject( process );
+    }
+
     return Status;
 }
 
@@ -143,18 +157,18 @@ NTSTATUS InstanceSetupCallback( PCFLT_RELATED_OBJECTS FltObjects, FLT_INSTANCE_S
     UNREFERENCED_PARAMETER( VolumeDeviceType );
     UNREFERENCED_PARAMETER( VolumeFilesystemType );
 
-    DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "[ + ] ¿ŒΩ∫≈œΩ∫ ø¨∞·µ \n" );
+    DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "[ + ] Ïù∏Ïä§ÌÑ¥Ïä§ Ïó∞Í≤∞Îê®\n" );
     return STATUS_SUCCESS;
 }
 
 NTSTATUS PortConnect( PFLT_PORT ClientPort, PVOID ServerPortCookie, PVOID ConnectionContext, ULONG SizeOfContext, PVOID* ConnectionCookie )
 {
     gClientPort = ClientPort;
-    DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "[ + ] ∆˜∆Æ ø¨∞·µ \n" );
+    DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "[ + ] Ìè¨Ìä∏ Ïó∞Í≤∞Îê®\n" );
     return STATUS_SUCCESS;
 }
 
-// ∆˜∆Æ ø¨∞· «ÿ¡¶ ƒ›πÈ
+// Ìè¨Ìä∏ Ïó∞Í≤∞ Ìï¥Ï†ú ÏΩúÎ∞±
 VOID PortDisconnect( PVOID ConnectionCookie )
 {
     if ( gClientPort != NULL )
@@ -162,7 +176,7 @@ VOID PortDisconnect( PVOID ConnectionCookie )
         FltCloseClientPort( gFilterHandle, &gClientPort );
         gClientPort = NULL;
     }
-    DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "[ - ] ∆˜∆Æ ø¨∞· «ÿ¡¶\n" );
+    DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "[ - ] Ìè¨Ìä∏ Ïó∞Í≤∞ Ìï¥Ï†ú\n" );
 }
 
 // IRP_MJ_CREATE PreCallback
@@ -179,10 +193,10 @@ FLT_PREOP_CALLBACK_STATUS PreCreateCallback( PFLT_CALLBACK_DATA Data, PCFLT_RELA
 
     RtlZeroMemory( context, sizeof( IRP_CONTEXT ) );
 
-    // «¡∑ŒººΩ∫ ID
+    // ÌîÑÎ°úÏÑ∏Ïä§ ID
     context->ProcessId = ( ULONG )FltGetRequestorProcessId( Data );
 
-    // «¡∑ŒººΩ∫ ¿Ã∏ß/∫Œ∏ PID ∞°¡Æø¿±‚
+    // ÌîÑÎ°úÏÑ∏Ïä§ Ïù¥Î¶Ñ/Î∂ÄÎ™® PID Í∞ÄÏ†∏Ïò§Í∏∞
     WCHAR procName[ 260 ] = L"<Unknown>";
     ULONG parentPid = 0;
     SearchProcessInfo( context->ProcessId, procName, &parentPid );
@@ -190,14 +204,9 @@ FLT_PREOP_CALLBACK_STATUS PreCreateCallback( PFLT_CALLBACK_DATA Data, PCFLT_RELA
     context->ParentProcessId = parentPid;
     RtlStringCchCopyW( context->ProcName, 260, procName );
 
-    if ( context->ParentProcessId == 0 || wcscmp( context->ProcName, L"<Unknown>" ) == 0 ) {
-        ExFreePoolWithTag( context, 'ctxt' );
-        return FLT_PREOP_SUCCESS_NO_CALLBACK;
-    }
-
     context->CreateOptions = Data->Iopb->Parameters.Create.Options & 0x00FFFFFF;
     context->IsPost = FALSE;
-    // ∆ƒ¿œ ¿Ã∏ß ∞°¡Æø¿±‚
+    // ÌååÏùº Ïù¥Î¶Ñ Í∞ÄÏ†∏Ïò§Í∏∞
     PFLT_FILE_NAME_INFORMATION nameInfo;
     status = FltGetFileNameInformation( Data, FLT_FILE_NAME_NORMALIZED | FLT_FILE_NAME_QUERY_DEFAULT, &nameInfo );
     if ( NT_SUCCESS( status ) ) {
@@ -206,9 +215,19 @@ FLT_PREOP_CALLBACK_STATUS PreCreateCallback( PFLT_CALLBACK_DATA Data, PCFLT_RELA
 
         FltReleaseFileNameInformation( nameInfo );
     }
-    else {
+    else 
+    {
         RtlStringCchCopyW( context->FileName, 260, L"<UnknownFile>" );
     }
+
+    if ( wcscmp(context->ProcName, L"<Unknown>" ) == 0) {
+        ExFreePoolWithTag(context, 'ctxt');
+        return FLT_PREOP_SUCCESS_NO_CALLBACK;
+    }
+
+    DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+        "[Snapshot] PID=%lu, PPID=%lu, Name=%ws, FileName: %ws\n", context->ProcessId, context->ParentProcessId, context->ProcName, context->FileName);
+
     GENERIC_MESSAGE msg = {};
     msg.Type = MessageTypeIrpCreate;
     msg.IrpInfo = *context;
@@ -256,7 +275,7 @@ NTSTATUS DriverUnload( FLT_FILTER_UNLOAD_FLAGS Flags )
         FltUnregisterFilter( gFilterHandle );
 
     PsSetCreateProcessNotifyRoutineEx( ProcessNotifyEx, TRUE );
-    DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "[ - ] µÂ∂Û¿Ãπˆ æ∑Œµ˘ øœ∑·\n" );
+    DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "[ - ] ÎìúÎùºÏù¥Î≤Ñ Ïñ∏Î°úÎî© ÏôÑÎ£å\n" );
     return STATUS_SUCCESS;
 }
 
@@ -269,7 +288,7 @@ NTSTATUS DriverEntry( PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath 
     status = PsSetCreateProcessNotifyRoutineEx( ProcessNotifyEx, FALSE );
     if ( !NT_SUCCESS( status ) )
     {
-        DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL, "ProcessNotify µÓ∑œ Ω«∆–: 0x%X\n", status );
+        DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL, "ProcessNotify Îì±Î°ù Ïã§Ìå®: 0x%X\n", status );
         return status;
     }
 
@@ -293,11 +312,11 @@ NTSTATUS DriverEntry( PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath 
     status = FltRegisterFilter( DriverObject, &filterRegistration, &gFilterHandle );
     if ( !NT_SUCCESS( status ) )
     {
-        DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL, "FltRegisterFilter Ω«∆–: 0x%X\n", status );
+        DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL, "FltRegisterFilter Ïã§Ìå®: 0x%X\n", status );
         return status;
     }
 
-    DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "FltRegisterFilter º∫∞¯\n" );
+    DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "FltRegisterFilter ÏÑ±Í≥µ\n" );
 
     UNICODE_STRING uniName = RTL_CONSTANT_STRING( COMM_PORT_NAME );
     OBJECT_ATTRIBUTES oa;
@@ -306,7 +325,7 @@ NTSTATUS DriverEntry( PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath 
     status = FltBuildDefaultSecurityDescriptor( &sd, FLT_PORT_ALL_ACCESS );
     if ( !NT_SUCCESS( status ) )
     {
-        DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL, "SecurityDescriptor ª˝º∫ Ω«∆–: 0x%X\n", status );
+        DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL, "SecurityDescriptor ÏÉùÏÑ± Ïã§Ìå®: 0x%X\n", status );
         FltUnregisterFilter( gFilterHandle );
         return status;
     }
@@ -328,17 +347,17 @@ NTSTATUS DriverEntry( PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath 
 
     if ( !NT_SUCCESS( status ) )
     {
-        DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL, "FltCreateCommunicationPort Ω«∆–: 0x%X\n", status );
+        DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL, "FltCreateCommunicationPort Ïã§Ìå®: 0x%X\n", status );
         FltUnregisterFilter( gFilterHandle );
         return status;
     }
 
-    DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "FltCreateCommunicationPort º∫∞¯\n" );
+    DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "FltCreateCommunicationPort ÏÑ±Í≥µ\n" );
 
     status = FltStartFiltering( gFilterHandle );
     if ( !NT_SUCCESS( status ) )
     {
-        DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL, "FltStartFiltering Ω«∆–: 0x%X\n", status );
+        DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL, "FltStartFiltering Ïã§Ìå®: 0x%X\n", status );
         FltCloseCommunicationPort( gServerPort );
         FltUnregisterFilter( gFilterHandle );
         return status;
@@ -347,7 +366,7 @@ NTSTATUS DriverEntry( PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath 
     ExInitializeFastMutex( &g_ProcessListLock );
     InitializeListHead( &g_ProcessNameList );
 
-    DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "FltStartFiltering º∫∞¯ - µÂ∂Û¿Ãπˆ ∑Œµ˘ øœ∑·\n" );
+    DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "FltStartFiltering ÏÑ±Í≥µ - ÎìúÎùºÏù¥Î≤Ñ Î°úÎî© ÏôÑÎ£å\n" );
 
     return STATUS_SUCCESS;
 }

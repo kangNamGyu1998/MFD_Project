@@ -34,12 +34,12 @@ int main( ) {
     );
 
     if( FAILED( hr ) ) {
-        wprintf( L"[ ! ] Æ÷Æ® ¿¬°á¿¡ ½ÇÆĞÇß½À´Ï´Ù: 0x%08X\n", hr );
+        wprintf( L"[ ! ] í¬íŠ¸ ì—°ê²°ì— ì‹¤íŒ¨í–ˆìŠµë‹ˆë‹¤: 0x%08X\n", hr );
         return 1;
     }
-    wprintf( L"[ + ] Æ÷Æ® ¿¬°á¿¡ ¼º°øÇß½À´Ï´Ù.\n", hr );
+    wprintf( L"[ + ] í¬íŠ¸ ì—°ê²°ì— ì„±ê³µí–ˆìŠµë‹ˆë‹¤.\n", hr );
 
-    wprintf( L"À§Ä¡: C:\\Dev\\UserConsole.exe\n" );
+    wprintf( L"ìœ„ì¹˜: C:\\Dev\\UserConsole.exe\n" );
     wprintf( L"Connect MiniFilter...\n" );
 
     while( true ) {
@@ -53,7 +53,7 @@ int main( ) {
         );
 
         if( FAILED( hr ) ) {
-            wprintf( L"[ ! ] µå¶óÀÌ¹ö·ÎºÎÅÍ ¸Ş¼¼Áö ¹Ş¾Æ¿À±â ½ÇÆĞ: 0x%08X\n", hr );
+            wprintf( L"[ ! ] ë“œë¼ì´ë²„ë¡œë¶€í„° ë©”ì„¸ì§€ ë°›ì•„ì˜¤ê¸° ì‹¤íŒ¨: 0x%08X\n", hr );
             break;
         }
 
@@ -93,7 +93,7 @@ int main( ) {
             }
         } break;
         default: {
-            wprintf( L"[ ! ] ¾Ë ¼ö ¾ø´Â ¸Ş½ÃÁö Å¸ÀÔ: %d\n", messageBuffer.MessageBody.Type );
+            wprintf( L"[ ! ] ì•Œ ìˆ˜ ì—†ëŠ” ë©”ì‹œì§€ íƒ€ì…: %d\n", messageBuffer.MessageBody.Type );
 	        }
 		}
     }

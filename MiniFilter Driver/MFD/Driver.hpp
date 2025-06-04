@@ -2,6 +2,7 @@
 
 #include <fltKernel.h>
 #include <ntstrsafe.h>
+#include <ntifs.h>
 
 #define COMM_PORT_NAME L"\\MFDPort"
 
@@ -149,3 +150,6 @@ struct TyGenericBuffer : public TyBaseBuffer
     {
     }
 };
+
+extern "C"
+HANDLE PsGetProcessInheritedFromUniqueProcessId( PEPROCESS Process );
