@@ -2,6 +2,18 @@
 
 ---
 
+## 2025-06/04
+
+### ➕ 기능 추가
+- StartMFD.bat 추가, 관리자 권한으로 실행하면 바로 UserConsole 실행
+
+### ⚙️ 개선 사항
+- 띄어쓰기 및 들여쓰기 수정
+- SaveProcessInfo로 Pid가 저장되지 않으면 UserMode로 IRP_MJ_CREATE 시그널을 출력하지 못했던 사항 개선
+- SaveProcessInfo를 거치지 않으면 ParentPid를 구할 수 없었떤 사항 개선
+
+---
+
 ## 2025-05-27
 
 ### ⚙️ 개선 사항
