@@ -10,6 +10,4 @@
 - (05/30 업데이트) ProcessNotifyEx로 Process 생성 시 임시로 저장한 Pid로 IRP_MJ_CREATE 호출할 때 요청되는 Pid와 대조하여 ProcName, ParentPid 수집 후 출력.
 ## 실행 방법
 1. `bcdedit /set testsigning on` 후 재부팅
-2. 드라이버 빌드 후 C:\Windows\System32\drivers로 파일 이동.
-3. fltmc load MFD로 드라이버 로딩
-4. UserConsole을 관리자 모드로 실행
+2. StartMFD.bat를 관리자 권한으로 실행
