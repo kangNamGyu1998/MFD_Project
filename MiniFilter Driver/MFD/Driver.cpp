@@ -9,7 +9,7 @@ VOID ExtractFileName( const UNICODE_STRING* fullPath, WCHAR* outFileName, SIZE_T
 
     USHORT len = fullPath->Length / sizeof( WCHAR );
 
-    WCHAR* result = ( WCHAR* )ExAllocatePoolWithTag( NonPagedPool, ( len + 1 ) * sizeof( WCHAR ), 'u2wT' );
+    WCHAR* result = ( WCHAR* )ExAllocatePoolZero( NonPagedPool, ( len + 1 ) * sizeof( WCHAR ), 'u2wT' );
     if ( result == NULL )
         return;
 
@@ -285,13 +285,6 @@ NTSTATUS DriverEntry( PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath 
 {
     NTSTATUS status;
 
-    status = PsSetCreateProcessNotifyRoutineEx( ProcessNotifyEx, FALSE );
-    if ( !NT_SUCCESS( status ) )
-    {
-        DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL, "ProcessNotify 등록 실패: 0x%X\n", status );
-        return status;
-    }
-
     FLT_REGISTRATION filterRegistration = {
         sizeof( FLT_REGISTRATION ),
         FLT_REGISTRATION_VERSION,
@@ -363,10 +356,17 @@ NTSTATUS DriverEntry( PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath 
         return status;
     }
 
+    status = PsSetCreateProcessNotifyRoutineEx(ProcessNotifyEx, FALSE);
+    if (!NT_SUCCESS(status))
+    {
+        DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL, "ProcessNotify 등록 실패: 0x%X\n", status);
+        return status;
+    }
+
     ExInitializeFastMutex( &g_ProcessListLock );
     InitializeListHead( &g_ProcessNameList );
 
     DbgPrintEx( DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "FltStartFiltering 성공 - 드라이버 로딩 완료\n" );
 
-    return STATUS_SUCCESS;
+	return STATUS_SUCCESS;
 }

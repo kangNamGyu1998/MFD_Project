@@ -70,35 +70,6 @@ struct { ULONG Flag; const wchar_t* Name; } flags[] = {
         { 0x00080000, L"FILE_RESERVE_OPFILTER" }
 };
 
-PFLT_FILTER gFilterHandle = NULL;
-PFLT_PORT gServerPort = NULL;
-PFLT_PORT gClientPort = NULL;
-
-LARGE_INTEGER TimeOut;
-#pragma pack( pop )
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-VOID ExtractFileName( const UNICODE_STRING* fullPath, WCHAR* outFileName, SIZE_T outLen );
-
-VOID SaveProcessName( ULONG pid, ULONG parentpid, const WCHAR* InName );
-
-NTSTATUS SearchProcessInfo( ULONG pid, WCHAR* OutName, ULONG* OutParentId );
-extern "C" VOID ProcessNotifyEx( PEPROCESS Process, HANDLE ProcessId, PPS_CREATE_NOTIFY_INFO CreateInfo );
-
-NTSTATUS InstanceSetupCallback( PCFLT_RELATED_OBJECTS FltObjects, FLT_INSTANCE_SETUP_FLAGS Flags, DEVICE_TYPE VolumeDeviceType, FLT_FILESYSTEM_TYPE VolumeFilesystemType );
-
-NTSTATUS PortConnect( PFLT_PORT ClientPort, PVOID ServerPortCookie, PVOID ConnectionContext, ULONG SizeOfContext, PVOID* ConnectionCookie );
-
-// 포트 연결 해제 콜백
-VOID PortDisconnect( PVOID ConnectionCookie );
-
-// IRP_MJ_CREATE PreCallback
-FLT_PREOP_CALLBACK_STATUS PreCreateCallback( PFLT_CALLBACK_DATA Data, PCFLT_RELATED_OBJECTS FltObjects, PVOID* CompletionContext );
-
-// IRP_MJ_CREATE PostCallback
-FLT_POSTOP_CALLBACK_STATUS PostCreateCallback( PFLT_CALLBACK_DATA Data, PCFLT_RELATED_OBJECTS FltObjects, PVOID CompletionContext, FLT_POST_OPERATION_FLAGS Flags );
-
 enum TyEnBufferType
 {
     BUFFER_UNKNOWN,
@@ -127,29 +98,30 @@ enum TyEnBufferType
     BUFFER_SWAP_WRITE_65536,    // 직접 지정하지 말 것
 };
 
-struct TyBaseBuffer
-{
-    TyEnBufferType      BufferType;
-    BOOLEAN             IsAllocatedFromLookasideList;
-    SIZE_T              BufferSize;
-    ULONG               PoolTag;
+PFLT_FILTER gFilterHandle = NULL;
+PFLT_PORT gServerPort = NULL;
+PFLT_PORT gClientPort = NULL;
 
-    TyBaseBuffer() : BufferType( BUFFER_UNKNOWN )
-        , IsAllocatedFromLookasideList( FALSE )
-        , BufferSize( 0 )
-    {
-    }
-};
+LARGE_INTEGER TimeOut;
+#pragma pack( pop )
 
-template< typename T >
-struct TyGenericBuffer : public TyBaseBuffer
-{
-    T* Buffer;
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    TyGenericBuffer<T>() : TyBaseBuffer(), Buffer( nullptr )
-    {
-    }
-};
+VOID ExtractFileName( const UNICODE_STRING* fullPath, WCHAR* outFileName, SIZE_T outLen );
+VOID SaveProcessName( ULONG pid, ULONG parentpid, const WCHAR* InName );
 
-extern "C"
-HANDLE PsGetProcessInheritedFromUniqueProcessId( PEPROCESS Process );
+NTSTATUS SearchProcessInfo( ULONG pid, WCHAR* OutName, ULONG* OutParentId );
+NTSTATUS InstanceSetupCallback( PCFLT_RELATED_OBJECTS FltObjects, FLT_INSTANCE_SETUP_FLAGS Flags, DEVICE_TYPE VolumeDeviceType, FLT_FILESYSTEM_TYPE VolumeFilesystemType );
+NTSTATUS CreateInstanceContext(PCFLT_RELATED_OBJECTS FltObjects, FLT_INSTANCE_SETUP_FLAGS Flags, DEVICE_TYPE VolumeDeviceType, FLT_FILESYSTEM_TYPE VolumeFilesystemType);
+NTSTATUS PortConnect( PFLT_PORT ClientPort, PVOID ServerPortCookie, PVOID ConnectionContext, ULONG SizeOfContext, PVOID* ConnectionCookie );
+// 포트 연결 해제 콜백
+VOID PortDisconnect( PVOID ConnectionCookie );
+
+// IRP_MJ_CREATE PreCallback
+FLT_PREOP_CALLBACK_STATUS PreCreateCallback( PFLT_CALLBACK_DATA Data, PCFLT_RELATED_OBJECTS FltObjects, PVOID* CompletionContext );
+
+// IRP_MJ_CREATE PostCallback
+FLT_POSTOP_CALLBACK_STATUS PostCreateCallback( PFLT_CALLBACK_DATA Data, PCFLT_RELATED_OBJECTS FltObjects, PVOID CompletionContext, FLT_POST_OPERATION_FLAGS Flags );
+
+extern "C" HANDLE PsGetProcessInheritedFromUniqueProcessId( PEPROCESS Process );
+extern "C" VOID ProcessNotifyEx(PEPROCESS Process, HANDLE ProcessId, PPS_CREATE_NOTIFY_INFO CreateInfo);
