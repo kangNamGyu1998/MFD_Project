@@ -9,10 +9,10 @@ VOID ExtractFileName( const UNICODE_STRING* fullPath, WCHAR* outFileName, SIZE_T
 
     USHORT len = fullPath->Length / sizeof( WCHAR );
 
-    WCHAR* result = ( WCHAR* )ExAllocatePoolZero( NonPagedPool, ( len + 1 ) * sizeof( WCHAR ), 'u2wT' );
+    WCHAR* result = ( WCHAR* )ExAllocatePoolWithTag( NonPagedPool, ( len + 1 ) * sizeof( WCHAR ), 'u2wT' );
     if ( result == NULL )
         return;
-
+    RtlZeroMemory( result, sizeof( *result ) );
     RtlCopyMemory( result, fullPath->Buffer, fullPath->Length );
 
     result[ len ] = L'\0';
