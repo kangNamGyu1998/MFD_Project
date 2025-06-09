@@ -37,7 +37,7 @@ int main( ) {
         wprintf( L"[ ! ] 포트 연결에 실패했습니다: 0x%08X\n", hr );
         return 1;
     }
-    wprintf( L"[ + ] 포트 연결에 성공했습니다.\n", hr );
+    wprintf( L"[ + ] 포트 연결에 성공했습니다.\n" );
 
     wprintf( L"위치: C:\\Dev\\UserConsole.exe\n" );
     wprintf( L"Connect MiniFilter...\n" );
@@ -58,11 +58,11 @@ int main( ) {
         }
 
         const auto IrpInfo = &messageBuffer.MessageBody.IrpInfo;
-        const auto ProcpInfo = &messageBuffer.MessageBody.ProcInfo;
 
         switch( messageBuffer.MessageBody.Type )
         {
-        case MessageTypeIrpCreate: {
+        case MessageTypeIrpCreate:
+        {
             if ( IrpInfo->IsPost )
             {
                 WCHAR errMsg[128] = L"";
@@ -91,6 +91,22 @@ int main( ) {
                     IrpInfo->CreateOptions,
                     optDesc );
             }
+        } break;
+        case MessageTypeIrpCleanup:
+        {
+            wprintf(L"IRP : IRP_MJ_CLEANUP, PID : %lu, ParentPID : %lu, Proc Name : %ws, File : %ws\n",
+                IrpInfo->ProcessId,
+                IrpInfo->ParentProcessId,
+                IrpInfo->ProcName,
+                IrpInfo->FileName );
+        } break;
+        case MessageTypeIrpClose:
+        {
+            wprintf(L"IRP : IRP_MJ_CLOSE, PID : %lu, ParentPID : %lu, Proc Name : %ws, File : %ws\n",
+                IrpInfo->ProcessId,
+                IrpInfo->ParentProcessId,
+                IrpInfo->ProcName,
+                IrpInfo->FileName );
         } break;
         default: {
             wprintf( L"[ ! ] 알 수 없는 메시지 타입: %d\n", messageBuffer.MessageBody.Type );

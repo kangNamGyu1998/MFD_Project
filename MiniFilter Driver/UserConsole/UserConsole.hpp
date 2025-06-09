@@ -19,7 +19,8 @@ typedef struct _PROC_EVENT_INFO {
 
 typedef enum _MESSAGE_TYPE {
     MessageTypeIrpCreate,
-    MessageTypeProcEvent
+    MessageTypeIrpCleanup,
+    MessageTypeIrpClose
 } MESSAGE_TYPE;
 
 typedef struct _IRP_CONTEXT {
