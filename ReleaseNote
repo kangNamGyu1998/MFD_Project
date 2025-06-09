@@ -2,7 +2,17 @@
 
 ---
 
-## 2025-06/05
+## 2025-06-09
+
+### ➕ 기능 추가
+- IRP_MJ_CLOSE, IRP_MJ_CLEANUP 추가.
+
+### ⚙️ 개선 사항
+- UserMode IRP_MJ_CLEANUP, IRP_MJ_CLOSE 추가에 따른 Switch Case 개선
+
+---
+
+## 2025-06-05
 
 ### ⚙️ 개선 사항
 - ExAllocatePoolWitTag 실행 시 자동으로 초기화 되지 않기 때문에 일부 코드 ExAllocatePoolZero로 변경
@@ -11,7 +21,7 @@
 
 ---
 
-## 2025-06/04
+## 2025-06-04
 
 ### ➕ 기능 추가
 - StartMFD.bat 추가, 관리자 권한으로 실행하면 바로 UserConsole 실행
