@@ -26,7 +26,8 @@ typedef struct _PROC_EVENT_INFO {
 
 typedef enum _MESSAGE_TYPE {
     MessageTypeIrpCreate,
-    MessageTypeProcEvent
+    MessageTypeIrpCleanup,
+    MessageTypeIrpClose
 } MESSAGE_TYPE;
 
 typedef struct _IRP_CONTEXT {
@@ -70,6 +71,22 @@ struct { ULONG Flag; const wchar_t* Name; } flags[] = {
         { 0x00080000, L"FILE_RESERVE_OPFILTER" }
 };
 
+typedef struct _MY_FILE_CONTEXT {
+    WCHAR FileName[260];
+    WCHAR ProcName[260];
+    ULONG ProcessId;
+    ULONG ParentProcessId;
+} MY_FILE_CONTEXT, * PMY_FILE_CONTEXT;
+
+NTSTATUS SetFileContextFromCreate( 
+    PFLT_CALLBACK_DATA Data,
+    PCFLT_RELATED_OBJECTS FltObjects,
+    const WCHAR* FileName,
+    const WCHAR* ProcName,
+    ULONG Pid,
+    ULONG Ppid
+);
+
 enum TyEnBufferType
 {
     BUFFER_UNKNOWN,
@@ -98,6 +115,16 @@ enum TyEnBufferType
     BUFFER_SWAP_WRITE_65536,    // 직접 지정하지 말 것
 };
 
+typedef struct _MY_STREAMHANDLE_CONTEXT {
+    WCHAR FileName[260];
+    WCHAR ProcName[260];
+    ULONG ProcessId;
+    ULONG ParentProcessId;
+} MY_STREAMHANDLE_CONTEXT, * PMY_STREAMHANDLE_CONTEXT;
+
+NTSTATUS CreateStreamHandleContext( PFLT_CALLBACK_DATA Data, PCFLT_RELATED_OBJECTS FltObjects );
+NTSTATUS QueryStreamHandleContext( PFLT_INSTANCE Instance, PFILE_OBJECT FileObject, PMY_STREAMHANDLE_CONTEXT* OutContext );
+
 PFLT_FILTER gFilterHandle = NULL;
 PFLT_PORT gServerPort = NULL;
 PFLT_PORT gClientPort = NULL;
@@ -112,16 +139,22 @@ VOID SaveProcessName( ULONG pid, ULONG parentpid, const WCHAR* InName );
 
 NTSTATUS SearchProcessInfo( ULONG pid, WCHAR* OutName, ULONG* OutParentId );
 NTSTATUS InstanceSetupCallback( PCFLT_RELATED_OBJECTS FltObjects, FLT_INSTANCE_SETUP_FLAGS Flags, DEVICE_TYPE VolumeDeviceType, FLT_FILESYSTEM_TYPE VolumeFilesystemType );
-NTSTATUS CreateInstanceContext(PCFLT_RELATED_OBJECTS FltObjects, FLT_INSTANCE_SETUP_FLAGS Flags, DEVICE_TYPE VolumeDeviceType, FLT_FILESYSTEM_TYPE VolumeFilesystemType);
 NTSTATUS PortConnect( PFLT_PORT ClientPort, PVOID ServerPortCookie, PVOID ConnectionContext, ULONG SizeOfContext, PVOID* ConnectionCookie );
 // 포트 연결 해제 콜백
 VOID PortDisconnect( PVOID ConnectionCookie );
 
 // IRP_MJ_CREATE PreCallback
 FLT_PREOP_CALLBACK_STATUS PreCreateCallback( PFLT_CALLBACK_DATA Data, PCFLT_RELATED_OBJECTS FltObjects, PVOID* CompletionContext );
-
 // IRP_MJ_CREATE PostCallback
 FLT_POSTOP_CALLBACK_STATUS PostCreateCallback( PFLT_CALLBACK_DATA Data, PCFLT_RELATED_OBJECTS FltObjects, PVOID CompletionContext, FLT_POST_OPERATION_FLAGS Flags );
+// IRP_MJ_CLEANUP PreCallback
+FLT_PREOP_CALLBACK_STATUS PreCleanupCallback( PFLT_CALLBACK_DATA Data, PCFLT_RELATED_OBJECTS FltObjects, PVOID* CompletionContext );
+// IRP_MJ_CLEANUP PostCallback
+FLT_POSTOP_CALLBACK_STATUS PostCleanupCallback( PFLT_CALLBACK_DATA Data, PCFLT_RELATED_OBJECTS FltObjects, PVOID CompletionContext, FLT_POST_OPERATION_FLAGS Flags );
+// IRP_MJ_CLOSE PreCallback
+FLT_PREOP_CALLBACK_STATUS PreCloseCallback( PFLT_CALLBACK_DATA Data, PCFLT_RELATED_OBJECTS FltObjects, PVOID* CompletionContext );
+// IRP_MJ_CLOSE PostCallback
+FLT_POSTOP_CALLBACK_STATUS PostCloseCallback( PFLT_CALLBACK_DATA Data, PCFLT_RELATED_OBJECTS FltObjects, PVOID CompletionContext, FLT_POST_OPERATION_FLAGS Flags );
 
 extern "C" HANDLE PsGetProcessInheritedFromUniqueProcessId( PEPROCESS Process );
-extern "C" VOID ProcessNotifyEx(PEPROCESS Process, HANDLE ProcessId, PPS_CREATE_NOTIFY_INFO CreateInfo);
+extern "C" VOID ProcessNotifyEx( PEPROCESS Process, HANDLE ProcessId, PPS_CREATE_NOTIFY_INFO CreateInfo );
