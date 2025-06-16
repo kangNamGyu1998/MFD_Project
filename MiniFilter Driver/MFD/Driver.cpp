@@ -71,7 +71,7 @@ VOID ExtractFileName( const UNICODE_STRING* fullPath, WCHAR* outFileName, SIZE_T
     WCHAR* result = ( WCHAR* )ExAllocatePoolWithTag( NonPagedPool, ( len + 1 ) * sizeof( WCHAR ), 'u2wT' );
     if ( result == NULL )
         return;
-    RtlZeroMemory( result, sizeof( *result ) );
+    RtlZeroMemory( result, ( len + 1 ) * sizeof( WCHAR ) );
     RtlCopyMemory( result, fullPath->Buffer, fullPath->Length );
 
     result[ len ] = L'\0';
@@ -175,7 +175,9 @@ VOID ProcessNotifyEx( PEPROCESS Process, HANDLE ProcessId, PPS_CREATE_NOTIFY_INF
     GENERIC_MESSAGE msg = {};
     TimeOut.QuadPart = -10 * 1000 * 1000;
 
-    if ( CreateInfo != NULL && CreateInfo->ImageFileName->Length < 260 * sizeof( WCHAR ) )
+    if ( CreateInfo != NULL &&
+         CreateInfo->ImageFileName != NULL &&
+         CreateInfo->ImageFileName->Length < 260 * sizeof( WCHAR ) )
     {
         msg.ProcInfo.IsCreate = TRUE;
         msg.ProcInfo.ProcessId = ( ULONG )( ULONG_PTR )ProcessId;
