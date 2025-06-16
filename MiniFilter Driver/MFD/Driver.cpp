@@ -165,6 +165,61 @@ NTSTATUS SearchProcessInfo( ULONG pid, WCHAR* OutName, ULONG* OutParentId )
     return Status;
 }
 
+NTSTATUS CreateStreamHandleContext( PFLT_CALLBACK_DATA Data, PCFLT_RELATED_OBJECTS FltObjects )
+{
+    NTSTATUS status;
+    PMY_STREAMHANDLE_CONTEXT ctx = NULL;
+
+    status = FltAllocateContext(
+        FltObjects->Filter,
+        FLT_STREAMHANDLE_CONTEXT,
+        sizeof( MY_STREAMHANDLE_CONTEXT ),
+        NonPagedPool,
+        (PFLT_CONTEXT*)&ctx
+    );
+
+    if ( !NT_SUCCESS( status ) )
+        return status;
+
+    RtlZeroMemory( ctx, sizeof( MY_STREAMHANDLE_CONTEXT ) );
+
+    ctx->ProcessId = (ULONG)FltGetRequestorProcessId( Data );
+
+    WCHAR procName[260] = L"<Unknown>";
+    ULONG parentPid = 0;
+    SearchProcessInfo( ctx->ProcessId, procName, &parentPid );
+
+    ctx->ParentProcessId = parentPid;
+    RtlStringCchCopyW( ctx->ProcName, 260, procName );
+
+    PFLT_FILE_NAME_INFORMATION nameInfo;
+    status = FltGetFileNameInformation( Data, FLT_FILE_NAME_NORMALIZED | FLT_FILE_NAME_QUERY_DEFAULT, &nameInfo );
+    if ( NT_SUCCESS( status ) ) {
+        FltParseFileNameInformation( nameInfo );
+        ExtractFileName( &nameInfo->Name, ctx->FileName, 260 );
+        FltReleaseFileNameInformation( nameInfo );
+    }
+    else {
+        RtlStringCchCopyW( ctx->FileName, 260, L"<UnknownFile>" );
+    }
+
+    status = FltSetStreamHandleContext(
+        FltObjects->Instance,
+        FltObjects->FileObject,
+        FLT_SET_CONTEXT_KEEP_IF_EXISTS,
+        ctx,
+        NULL
+    );
+
+    FltReleaseContext( ctx );
+    return status;
+}
+
+NTSTATUS QueryStreamHandleContext( PFLT_INSTANCE Instance, PFILE_OBJECT FileObject, PMY_STREAMHANDLE_CONTEXT* OutContext )
+{
+    return FltGetStreamHandleContext( Instance, FileObject, (PFLT_CONTEXT*)OutContext );
+}
+
 VOID ProcessNotifyEx( PEPROCESS Process, HANDLE ProcessId, PPS_CREATE_NOTIFY_INFO CreateInfo )
 {
     UNREFERENCED_PARAMETER( Process );
@@ -356,6 +411,7 @@ FLT_PREOP_CALLBACK_STATUS PreCreateCallback( PFLT_CALLBACK_DATA Data, PCFLT_RELA
     FltSendMessage( gFilterHandle, &gClientPort, &msg, sizeof( GENERIC_MESSAGE ), NULL, NULL, &TimeOut );
     *CompletionContext = context;
     SetFileContextFromCreate( Data, FltObjects, context->FileName, context->ProcName, context->ProcessId, context->ParentProcessId );
+    CreateStreamHandleContext( Data, FltObjects );
 
     return FLT_PREOP_SUCCESS_WITH_CALLBACK;
 }
