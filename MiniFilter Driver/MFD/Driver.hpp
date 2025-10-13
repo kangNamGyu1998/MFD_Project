@@ -48,6 +48,12 @@ typedef struct _GENERIC_MESSAGE {
     };
 } GENERIC_MESSAGE, * PGENERIC_MESSAGE;
 
+typedef struct _SNAP_CTX {
+    ULONG  Pid, Ppid;
+    WCHAR  Proc[260];
+    WCHAR  File[260];
+} SNAP_CTX, * PSNAP_CTX;
+
 struct { ULONG Flag; const wchar_t* Name; } flags[] = {
         { 0x00000001, L"FILE_DIRECTORY_FILE" },
         { 0x00000002, L"FILE_WRITE_THROUGH" },
@@ -85,7 +91,7 @@ NTSTATUS SetFileContextFromCreate(
     const WCHAR* ProcName,
     ULONG Pid,
     ULONG Ppid
-);
+ );
 
 enum TyEnBufferType
 {

@@ -3,7 +3,7 @@ Signature   = "$Windows NT$"
 Class       = "ActivityMonitor"
 ClassGuid   = {b86dff51-a31e-4bac-b3cf-e8cfe75c9fc2}
 Provider    = %ProviderString%
-DriverVer = 05/16/2025,1.0.0.0
+DriverVer	= 10/12/2025,1.0.0.0
 CatalogFile = MFD.cat
 PnpLockdown = 1
 
@@ -122,7 +122,6 @@ ServiceName             = "MFD"
 DriverName              = "MFD"
 DiskId1                 = "MFD Device Installation Disk"
 
-;Instances specific information.
 DefaultInstance         = "MFD - Top Instance"
 Instance1.Name          = "MFD - Middle Instance"
 Instance1.Altitude      = "370000"
