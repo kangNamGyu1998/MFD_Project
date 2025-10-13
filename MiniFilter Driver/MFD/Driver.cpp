@@ -2,7 +2,10 @@
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-//IRP_MJ_CREATE PreCallback 시 파일 컨텍스트 설정
+// Create 시점에 FILE_OBJECT에 파일/프로세스 정보를 부착한다.
+// ※ REPLACE_IF_EXISTS 사용 이유
+//    - 동일 FILE_OBJECT에 이전 컨텍스트가 남아 있더라도 항상 최신 정보로 교체한다.
+//    - KEEP_IF_EXISTS를 쓰면 '이미 있으면 그냥 두기'라서 저장 실패(=오래된 정보 재사용) 케이스가 생길 수 있다.
 NTSTATUS SetFileContextFromCreate( PFLT_CALLBACK_DATA Data, PCFLT_RELATED_OBJECTS FltObjects, const WCHAR* FileName, const WCHAR* ProcName, ULONG Pid, ULONG Ppid )
 {
     UNREFERENCED_PARAMETER( Data );
@@ -45,7 +48,7 @@ NTSTATUS SetFileContextFromCreate( PFLT_CALLBACK_DATA Data, PCFLT_RELATED_OBJECT
     status = FltSetFileContext( 
         FltObjects->Instance,
         FltObjects->FileObject,
-        FLT_SET_CONTEXT_REPLACE_IF_EXISTS,  // 이미 있다면 덮어쓰지 않음
+        FLT_SET_CONTEXT_REPLACE_IF_EXISTS,
         context,
         NULL
     );
@@ -198,170 +201,11 @@ VOID ProcessNotifyEx( PEPROCESS Process, HANDLE ProcessId, PPS_CREATE_NOTIFY_INF
 
         WCHAR TName[ 260 ] = L"<Unknown>";
         ULONG Ppid = 0;
-        if ( SearchProcessInfo( msg.ProcInfo.ProcessId, TName, &Ppid ) )
+        if ( NT_SUCCESS(SearchProcessInfo( msg.ProcInfo.ProcessId, TName, &Ppid ) ) )
             RtlStringCchCopyW( msg.ProcInfo.ImageName, 260, TName );
         else
             RtlStringCchCopyW( msg.ProcInfo.ImageName, 260, L"<Unknown Process>" );
     }
-}
-
-// IRP_MJ_CLEANUP PreCallback
-FLT_PREOP_CALLBACK_STATUS PreCleanupCallback( PFLT_CALLBACK_DATA Data, PCFLT_RELATED_OBJECTS FltObjects, PVOID* CompletionContext )
-{
-    UNREFERENCED_PARAMETER(Data);
-
-    PMY_FILE_CONTEXT fctx = NULL;
-    NTSTATUS s = FltGetFileContext(FltObjects->Instance, FltObjects->FileObject, (PFLT_CONTEXT*)&fctx);
-    if (NT_SUCCESS(s) && fctx) {
-        PSNAP_CTX snap = (PSNAP_CTX)ExAllocatePoolWithTag(NonPagedPool, sizeof(SNAP_CTX), 'psnp');
-        if (snap) {
-            snap->Pid = fctx->ProcessId;
-            snap->Ppid = fctx->ParentProcessId;
-            RtlStringCchCopyW(snap->Proc, 260, fctx->ProcName);
-            RtlStringCchCopyW(snap->File, 260, fctx->FileName);
-            *CompletionContext = snap;
-        }
-        FltReleaseContext(fctx);
-    }
-    return FLT_PREOP_SUCCESS_WITH_CALLBACK;
-}
-
-// IRP_MJ_CLEANUP PostCallback
-FLT_POSTOP_CALLBACK_STATUS PostCleanupCallback( PFLT_CALLBACK_DATA Data, PCFLT_RELATED_OBJECTS FltObjects, PVOID CompletionContext, FLT_POST_OPERATION_FLAGS Flags )
-{
-    UNREFERENCED_PARAMETER(Data);
-    UNREFERENCED_PARAMETER(CompletionContext);
-    UNREFERENCED_PARAMETER(Flags);
-
-    ULONG pid = 0, ppid = 0;
-    WCHAR proc[260] = L"<Unknown>";
-    WCHAR file[260] = L"<Unknown>";
-
-    PMY_FILE_CONTEXT fctx = NULL;
-    NTSTATUS status = FltGetFileContext(
-        FltObjects->Instance,
-        FltObjects->FileObject,
-        (PFLT_CONTEXT*)&fctx
-    );
-
-    if (NT_SUCCESS(status) && fctx) {
-        pid = fctx->ProcessId;
-        ppid = fctx->ParentProcessId;
-        RtlStringCchCopyW(proc, ARRAYSIZE(proc), fctx->ProcName);
-        RtlStringCchCopyW(file, ARRAYSIZE(file), fctx->FileName);
-        FltReleaseContext(fctx);
-    }
-    else {
-        // 컨텍스트 없으면 최소한 PID / 파일 객체 이름 추출
-        pid = FltGetRequestorProcessId(Data);
-        if (FltObjects->FileObject && FltObjects->FileObject->FileName.Length > 0)
-            RtlStringCchCopyNW(file, ARRAYSIZE(file),
-                FltObjects->FileObject->FileName.Buffer,
-                FltObjects->FileObject->FileName.Length / sizeof(WCHAR));
-    }
-
-    if (gClientPort) {
-        LARGE_INTEGER timeout;
-        timeout.QuadPart = -10 * 1000 * 1000; // 1초
-        GENERIC_MESSAGE msg = {};
-        msg.Type = MessageTypeIrpCleanup;
-        msg.IrpInfo.IsPost = TRUE;
-        msg.IrpInfo.ProcessId = pid;
-        msg.IrpInfo.ParentProcessId = ppid;
-        RtlStringCchCopyW(msg.IrpInfo.ProcName, ARRAYSIZE(msg.IrpInfo.ProcName), proc);
-        RtlStringCchCopyW(msg.IrpInfo.FileName, ARRAYSIZE(msg.IrpInfo.FileName), file);
-        msg.IrpInfo.ResultStatus = STATUS_SUCCESS;
-
-        NTSTATUS s = FltSendMessage(gFilterHandle, &gClientPort,
-            &msg, sizeof(msg), NULL, NULL, &timeout);
-        DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
-            "[IRP] CLEANUP 메시지 전송 결과: 0x%08X\n", s);
-    }
-    else
-    {
-        DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
-            "[IRP] CLEANUP 메시지 전송 실패\n");
-    }
-
-    return FLT_POSTOP_FINISHED_PROCESSING;
-}
-
-// IRP_MJ_CLOSE PreCallback
-FLT_PREOP_CALLBACK_STATUS PreCloseCallback( PFLT_CALLBACK_DATA Data, PCFLT_RELATED_OBJECTS FltObjects, PVOID* CompletionContext )
-{
-    UNREFERENCED_PARAMETER(Data);
-
-    PMY_FILE_CONTEXT fctx = NULL;
-    if (NT_SUCCESS(FltGetFileContext(FltObjects->Instance, FltObjects->FileObject, (PFLT_CONTEXT*)&fctx)) && fctx) {
-        PSNAP_CTX snap = (PSNAP_CTX)ExAllocatePoolWithTag(NonPagedPool, sizeof(SNAP_CTX), 'psnp');
-        if (snap) {
-            snap->Pid = fctx->ProcessId;
-            snap->Ppid = fctx->ParentProcessId;
-            RtlStringCchCopyW(snap->Proc, 260, fctx->ProcName);
-            RtlStringCchCopyW(snap->File, 260, fctx->FileName);
-            *CompletionContext = snap;
-        }
-        FltReleaseContext(fctx);
-    }
-    return FLT_PREOP_SUCCESS_WITH_CALLBACK;
-}
-
-// IRP_MJ_CLOSE PostCallback
-FLT_POSTOP_CALLBACK_STATUS PostCloseCallback( PFLT_CALLBACK_DATA Data, PCFLT_RELATED_OBJECTS FltObjects, PVOID CompletionContext, FLT_POST_OPERATION_FLAGS Flags )
-{
-    UNREFERENCED_PARAMETER(Data);
-    UNREFERENCED_PARAMETER(CompletionContext);
-    UNREFERENCED_PARAMETER(Flags);
-
-    ULONG pid = 0, ppid = 0;
-    WCHAR proc[260] = L"<Unknown>";
-    WCHAR file[260] = L"<Unknown>";
-
-    PMY_FILE_CONTEXT fctx = NULL;
-    NTSTATUS status = FltGetFileContext(
-        FltObjects->Instance,
-        FltObjects->FileObject,
-        (PFLT_CONTEXT*)&fctx
-    );
-
-    if (NT_SUCCESS(status) && fctx) {
-        pid = fctx->ProcessId;
-        ppid = fctx->ParentProcessId;
-        RtlStringCchCopyW(proc, ARRAYSIZE(proc), fctx->ProcName);
-        RtlStringCchCopyW(file, ARRAYSIZE(file), fctx->FileName);
-        FltReleaseContext(fctx);
-    }
-    else {
-        pid = FltGetRequestorProcessId(Data);
-        if (FltObjects->FileObject && FltObjects->FileObject->FileName.Length > 0)
-            RtlStringCchCopyNW(file, ARRAYSIZE(file),
-                FltObjects->FileObject->FileName.Buffer,
-                FltObjects->FileObject->FileName.Length / sizeof(WCHAR));
-    }
-
-    if (gClientPort) {
-        LARGE_INTEGER timeout;
-        timeout.QuadPart = -10 * 1000 * 1000; // 1초
-        GENERIC_MESSAGE msg = {};
-        msg.Type = MessageTypeIrpClose;
-        msg.IrpInfo.IsPost = TRUE;
-        msg.IrpInfo.ProcessId = pid;
-        msg.IrpInfo.ParentProcessId = ppid;
-        RtlStringCchCopyW(msg.IrpInfo.ProcName, ARRAYSIZE(msg.IrpInfo.ProcName), proc);
-        RtlStringCchCopyW(msg.IrpInfo.FileName, ARRAYSIZE(msg.IrpInfo.FileName), file);
-        msg.IrpInfo.ResultStatus = STATUS_SUCCESS;
-
-        NTSTATUS s = FltSendMessage(gFilterHandle, &gClientPort,
-            &msg, sizeof(msg), NULL, NULL, &timeout);
-        DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
-            "[IRP] CLOSE 메시지 전송 결과: 0x%08X\n", s);
-    }
-    else
-    {
-        DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
-            "[IRP] CLOSE 메시지 전송 실패\n");
-    }
-    return FLT_POSTOP_FINISHED_PROCESSING;
 }
 
 // IRP_MJ_CREATE PreCallback
@@ -441,6 +285,139 @@ FLT_POSTOP_CALLBACK_STATUS PostCreateCallback( PFLT_CALLBACK_DATA Data, PCFLT_RE
     FltSendMessage( gFilterHandle, &gClientPort, &msg, sizeof( GENERIC_MESSAGE ), NULL, NULL, &TimeOut );
     ExFreePoolWithTag( context, 'ctxt' );
 
+    return FLT_POSTOP_FINISHED_PROCESSING;
+}
+
+// IRP_MJ_CLEANUP PreCallback
+FLT_PREOP_CALLBACK_STATUS PreCleanupCallback(PFLT_CALLBACK_DATA Data, PCFLT_RELATED_OBJECTS FltObjects, PVOID* CompletionContext)
+{
+    UNREFERENCED_PARAMETER(Data);
+
+    // Create 경로와 동일한 패턴 유지
+    if (gClientPort == NULL)
+        return FLT_PREOP_SUCCESS_WITH_CALLBACK;
+
+    PIRP_CONTEXT context = (PIRP_CONTEXT)ExAllocatePoolWithTag(NonPagedPool, sizeof(IRP_CONTEXT), 'ctxt');
+    if (!context)
+        return FLT_PREOP_SUCCESS_NO_CALLBACK;
+
+    RtlZeroMemory(context, sizeof(IRP_CONTEXT));
+
+    context->ProcessId = (ULONG)FltGetRequestorProcessId(Data);
+    context->IsPost = FALSE;
+    context->CreateOptions = 0;
+
+    // 1) FILE_CONTEXT에서 가져오기
+    PMY_FILE_CONTEXT fctx = NULL;
+    if (NT_SUCCESS(FltGetFileContext(FltObjects->Instance, FltObjects->FileObject, (PFLT_CONTEXT*)&fctx)) && fctx) {
+        context->ParentProcessId = fctx->ParentProcessId;
+        RtlStringCchCopyW(context->ProcName, 260, fctx->ProcName);
+        RtlStringCchCopyW(context->FileName, 260, fctx->FileName);
+        FltReleaseContext(fctx);
+    }
+    else {
+        // 2) 보강: SearchProcessInfo + FILE_OBJECT 이름
+        WCHAR pname[260] = L"<Unknown>"; ULONG ppid = 0;
+        SearchProcessInfo(context->ProcessId, pname, &ppid);
+        context->ParentProcessId = ppid;
+        RtlStringCchCopyW(context->ProcName, 260, pname);
+
+        if (FltObjects->FileObject && FltObjects->FileObject->FileName.Length > 0)
+            ExtractFileName(&FltObjects->FileObject->FileName, context->FileName, 260);
+        else
+            RtlStringCchCopyW(context->FileName, 260, L"<UnknownFile>");
+    }
+
+    *CompletionContext = context;
+    return FLT_PREOP_SUCCESS_WITH_CALLBACK;
+}
+
+// IRP_MJ_CLEANUP PostCallback
+FLT_POSTOP_CALLBACK_STATUS PostCleanupCallback(PFLT_CALLBACK_DATA Data, PCFLT_RELATED_OBJECTS FltObjects, PVOID CompletionContext, FLT_POST_OPERATION_FLAGS Flags)
+{
+    UNREFERENCED_PARAMETER(FltObjects);
+    UNREFERENCED_PARAMETER(Flags);
+
+    if (gClientPort == NULL || CompletionContext == NULL)
+        return FLT_POSTOP_FINISHED_PROCESSING;
+
+    PIRP_CONTEXT context = (PIRP_CONTEXT)CompletionContext;
+    context->ResultStatus = Data->IoStatus.Status;
+    context->IsPost = TRUE;
+
+    GENERIC_MESSAGE msg = {};
+    msg.Type = MessageTypeIrpCleanup;
+    msg.IrpInfo = *context;
+
+    TimeOut.QuadPart = -10 * 1000 * 1000;
+    (void)FltSendMessage(gFilterHandle, &gClientPort, &msg, sizeof(msg), NULL, NULL, &TimeOut);
+
+    ExFreePoolWithTag(context, 'ctxt');
+    return FLT_POSTOP_FINISHED_PROCESSING;
+}
+
+// IRP_MJ_CLOSE PreCallback
+FLT_PREOP_CALLBACK_STATUS PreCloseCallback(PFLT_CALLBACK_DATA Data, PCFLT_RELATED_OBJECTS FltObjects, PVOID* CompletionContext)
+{
+    UNREFERENCED_PARAMETER(Data);
+
+    if (gClientPort == NULL)
+        return FLT_PREOP_SUCCESS_WITH_CALLBACK;
+
+    PIRP_CONTEXT context = (PIRP_CONTEXT)ExAllocatePoolWithTag(NonPagedPool, sizeof(IRP_CONTEXT), 'ctxt');
+    if (!context)
+        return FLT_PREOP_SUCCESS_NO_CALLBACK;
+
+    RtlZeroMemory(context, sizeof(IRP_CONTEXT));
+
+    context->ProcessId = (ULONG)FltGetRequestorProcessId(Data);
+    context->IsPost = FALSE;
+    context->CreateOptions = 0;
+
+    PMY_FILE_CONTEXT fctx = NULL;
+    if (NT_SUCCESS(FltGetFileContext(FltObjects->Instance, FltObjects->FileObject, (PFLT_CONTEXT*)&fctx)) && fctx) {
+        context->ParentProcessId = fctx->ParentProcessId;
+        RtlStringCchCopyW(context->ProcName, 260, fctx->ProcName);
+        RtlStringCchCopyW(context->FileName, 260, fctx->FileName);
+        FltReleaseContext(fctx);
+    }
+    else {
+        WCHAR pname[260] = L"<Unknown>"; ULONG ppid = 0;
+        SearchProcessInfo(context->ProcessId, pname, &ppid);
+        context->ParentProcessId = ppid;
+        RtlStringCchCopyW(context->ProcName, 260, pname);
+
+        if (FltObjects->FileObject && FltObjects->FileObject->FileName.Length > 0)
+            ExtractFileName(&FltObjects->FileObject->FileName, context->FileName, 260);
+        else
+            RtlStringCchCopyW(context->FileName, 260, L"<UnknownFile>");
+    }
+
+    *CompletionContext = context;
+    return FLT_PREOP_SUCCESS_WITH_CALLBACK;
+}
+
+// IRP_MJ_CLOSE PostCallback
+FLT_POSTOP_CALLBACK_STATUS PostCloseCallback(PFLT_CALLBACK_DATA Data, PCFLT_RELATED_OBJECTS FltObjects, PVOID CompletionContext, FLT_POST_OPERATION_FLAGS Flags)
+{
+    UNREFERENCED_PARAMETER(FltObjects);
+    UNREFERENCED_PARAMETER(Flags);
+
+    if (gClientPort == NULL || CompletionContext == NULL)
+        return FLT_POSTOP_FINISHED_PROCESSING;
+
+    PIRP_CONTEXT context = (PIRP_CONTEXT)CompletionContext;
+    context->ResultStatus = Data->IoStatus.Status;
+    context->IsPost = TRUE;
+
+    GENERIC_MESSAGE msg = {};
+    msg.Type = MessageTypeIrpClose;
+    msg.IrpInfo = *context;
+
+    TimeOut.QuadPart = -10 * 1000 * 1000;
+    (void)FltSendMessage(gFilterHandle, &gClientPort, &msg, sizeof(msg), NULL, NULL, &TimeOut);
+
+    ExFreePoolWithTag(context, 'ctxt');
     return FLT_POSTOP_FINISHED_PROCESSING;
 }
 
