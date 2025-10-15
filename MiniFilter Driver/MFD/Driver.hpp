@@ -148,7 +148,8 @@ NTSTATUS InstanceSetupCallback( PCFLT_RELATED_OBJECTS FltObjects, FLT_INSTANCE_S
 NTSTATUS PortConnect( PFLT_PORT ClientPort, PVOID ServerPortCookie, PVOID ConnectionContext, ULONG SizeOfContext, PVOID* ConnectionCookie );
 // 포트 연결 해제 콜백
 VOID PortDisconnect( PVOID ConnectionCookie );
-
+//컨텍스트 클린업 콜백
+VOID FileContextCleanup(_In_ PFLT_CONTEXT Context, _In_ FLT_CONTEXT_TYPE ContextType);
 // IRP_MJ_CREATE PreCallback
 FLT_PREOP_CALLBACK_STATUS PreCreateCallback( PFLT_CALLBACK_DATA Data, PCFLT_RELATED_OBJECTS FltObjects, PVOID* CompletionContext );
 // IRP_MJ_CREATE PostCallback
@@ -164,3 +165,4 @@ FLT_POSTOP_CALLBACK_STATUS PostCloseCallback( PFLT_CALLBACK_DATA Data, PCFLT_REL
 
 extern "C" HANDLE PsGetProcessInheritedFromUniqueProcessId( PEPROCESS Process );
 extern "C" VOID ProcessNotifyEx( PEPROCESS Process, HANDLE ProcessId, PPS_CREATE_NOTIFY_INFO CreateInfo );
+extern const FLT_CONTEXT_REGISTRATION g_ContextRegs[];

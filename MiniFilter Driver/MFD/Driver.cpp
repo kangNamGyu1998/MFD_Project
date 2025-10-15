@@ -10,53 +10,49 @@ NTSTATUS SetFileContextFromCreate( PFLT_CALLBACK_DATA Data, PCFLT_RELATED_OBJECT
 {
     UNREFERENCED_PARAMETER( Data );
 
-    NTSTATUS status;
     PMY_FILE_CONTEXT context = NULL;
 
-    // 먼저 이미 컨텍스트가 연결돼 있는지 확인
-    status = FltGetFileContext( 
-        FltObjects->Instance,
-        FltObjects->FileObject,
-        ( PFLT_CONTEXT* )&context
-    );
-
-    if ( NT_SUCCESS( status ) ) {
-        // 이미 있으면 굳이 다시 만들 필요 없음
-        FltReleaseContext( context );
-        return STATUS_ALREADY_INITIALIZED;
-    }
-
-    // 새 FILE_CONTEXT 생성
-    status = FltAllocateContext( 
+    NTSTATUS status = FltAllocateContext(
         FltObjects->Filter,
         FLT_FILE_CONTEXT,
-        sizeof( MY_FILE_CONTEXT ),
+        sizeof(MY_FILE_CONTEXT),
         NonPagedPool,
-        ( PFLT_CONTEXT* )&context
+        (PFLT_CONTEXT*)&context
     );
 
-    if ( !NT_SUCCESS( status ) )
+    if (NT_SUCCESS(status) == false)
         return status;
 
-    RtlZeroMemory( context, sizeof( MY_FILE_CONTEXT ) );
-    RtlStringCchCopyW( context->FileName, 260, FileName );
-    RtlStringCchCopyW( context->ProcName, 260, ProcName );
+    RtlZeroMemory(context, sizeof(*context));
+	RtlStringCchCopyW(context->FileName, 260, FileName? FileName : L"<UnknownFile>");
+    RtlStringCchCopyW(context->ProcName, 260, ProcName? ProcName : L"<UnknownProc>");
     context->ProcessId = Pid;
     context->ParentProcessId = Ppid;
-
-    // FILE_CONTEXT를 FileObject에 연결
-    status = FltSetFileContext( 
+    //FILE_OBJECT에 컨텍스트 설정
+    status = FltSetFileContext(
         FltObjects->Instance,
         FltObjects->FileObject,
         FLT_SET_CONTEXT_REPLACE_IF_EXISTS,
-        context,
+        (PFLT_CONTEXT)context,
         NULL
     );
-
-    // context는 Set 성공/실패와 무관하게 release 필요
-    FltReleaseContext( context );
-    return status;
+    //참조 카운트 감소
+    FltReleaseContext((PFLT_CONTEXT)context);
+	return status;
 }
+
+// FILE_CONTEXT 클린업
+VOID FileContextCleanup(_In_ PFLT_CONTEXT Context, _In_ FLT_CONTEXT_TYPE ContextType)
+{
+    UNREFERENCED_PARAMETER(ContextType);
+    UNREFERENCED_PARAMETER(Context);
+}
+
+//컨텍스트 등록 테이블
+const FLT_CONTEXT_REGISTRATION g_ContextRegs[] = {
+    { FLT_FILE_CONTEXT, 0, FileContextCleanup, sizeof( MY_FILE_CONTEXT ), 'ctxt' },
+    { FLT_CONTEXT_END }
+};
 
 // 파일 경로에서 파일 이름만 추출
 VOID ExtractFileName( const UNICODE_STRING* fullPath, WCHAR* outFileName, SIZE_T outLen )
@@ -293,42 +289,35 @@ FLT_PREOP_CALLBACK_STATUS PreCleanupCallback(PFLT_CALLBACK_DATA Data, PCFLT_RELA
 {
     UNREFERENCED_PARAMETER(Data);
 
-    // Create 경로와 동일한 패턴 유지
-    if (gClientPort == NULL)
-        return FLT_PREOP_SUCCESS_WITH_CALLBACK;
+    if (gClientPort == NULL )
+		return FLT_PREOP_SUCCESS_WITH_CALLBACK;
 
-    PIRP_CONTEXT context = (PIRP_CONTEXT)ExAllocatePoolWithTag(NonPagedPool, sizeof(IRP_CONTEXT), 'ctxt');
-    if (!context)
-        return FLT_PREOP_SUCCESS_NO_CALLBACK;
+    PIRP_CONTEXT ctx = (PIRP_CONTEXT)ExAllocatePoolWithTag(NonPagedPool, sizeof(IRP_CONTEXT), 'ctxt');
+    if (!ctx)
+		return FLT_PREOP_SUCCESS_NO_CALLBACK;
 
-    RtlZeroMemory(context, sizeof(IRP_CONTEXT));
+	RtlZeroMemory(ctx, sizeof(*ctx));
+	ctx->ProcessId = (ULONG)FltGetRequestorProcessId(Data);
+	ctx->IsPost = FALSE;
+	ctx->CreateOptions = 0;
 
-    context->ProcessId = (ULONG)FltGetRequestorProcessId(Data);
-    context->IsPost = FALSE;
-    context->CreateOptions = 0;
-
-    // 1) FILE_CONTEXT에서 가져오기
-    PMY_FILE_CONTEXT fctx = NULL;
+	PMY_FILE_CONTEXT fctx = NULL;
     if (NT_SUCCESS(FltGetFileContext(FltObjects->Instance, FltObjects->FileObject, (PFLT_CONTEXT*)&fctx)) && fctx) {
-        context->ParentProcessId = fctx->ParentProcessId;
-        RtlStringCchCopyW(context->ProcName, 260, fctx->ProcName);
-        RtlStringCchCopyW(context->FileName, 260, fctx->FileName);
+        ctx->ParentProcessId = fctx->ParentProcessId;
+        RtlStringCchCopyW(ctx->ProcName, 260, fctx->ProcName);
+        RtlStringCchCopyW(ctx->FileName, 260, fctx->FileName);
         FltReleaseContext(fctx);
     }
     else {
-        // 2) 보강: SearchProcessInfo + FILE_OBJECT 이름
+        // 컨텍스트가 없을 때만 최소 정보 보강
         WCHAR pname[260] = L"<Unknown>"; ULONG ppid = 0;
-        SearchProcessInfo(context->ProcessId, pname, &ppid);
-        context->ParentProcessId = ppid;
-        RtlStringCchCopyW(context->ProcName, 260, pname);
-
-        if (FltObjects->FileObject && FltObjects->FileObject->FileName.Length > 0)
-            ExtractFileName(&FltObjects->FileObject->FileName, context->FileName, 260);
-        else
-            RtlStringCchCopyW(context->FileName, 260, L"<UnknownFile>");
+        (void)SearchProcessInfo(ctx->ProcessId, pname, &ppid);
+        ctx->ParentProcessId = ppid;
+        RtlStringCchCopyW(ctx->ProcName, 260, pname);
+        RtlStringCchCopyW(ctx->FileName, 260, L"<UnknownFile>");
     }
 
-    *CompletionContext = context;
+    *CompletionContext = ctx;
     return FLT_PREOP_SUCCESS_WITH_CALLBACK;
 }
 
@@ -364,36 +353,31 @@ FLT_PREOP_CALLBACK_STATUS PreCloseCallback(PFLT_CALLBACK_DATA Data, PCFLT_RELATE
     if (gClientPort == NULL)
         return FLT_PREOP_SUCCESS_WITH_CALLBACK;
 
-    PIRP_CONTEXT context = (PIRP_CONTEXT)ExAllocatePoolWithTag(NonPagedPool, sizeof(IRP_CONTEXT), 'ctxt');
-    if (!context)
+    PIRP_CONTEXT ctx = (PIRP_CONTEXT)ExAllocatePoolWithTag(NonPagedPool, sizeof(IRP_CONTEXT), 'ctxt');
+    if (!ctx)
         return FLT_PREOP_SUCCESS_NO_CALLBACK;
 
-    RtlZeroMemory(context, sizeof(IRP_CONTEXT));
-
-    context->ProcessId = (ULONG)FltGetRequestorProcessId(Data);
-    context->IsPost = FALSE;
-    context->CreateOptions = 0;
+    RtlZeroMemory(ctx, sizeof(*ctx));
+    ctx->ProcessId = (ULONG)FltGetRequestorProcessId(Data);
+    ctx->IsPost = FALSE;
+    ctx->CreateOptions = 0;
 
     PMY_FILE_CONTEXT fctx = NULL;
     if (NT_SUCCESS(FltGetFileContext(FltObjects->Instance, FltObjects->FileObject, (PFLT_CONTEXT*)&fctx)) && fctx) {
-        context->ParentProcessId = fctx->ParentProcessId;
-        RtlStringCchCopyW(context->ProcName, 260, fctx->ProcName);
-        RtlStringCchCopyW(context->FileName, 260, fctx->FileName);
+        ctx->ParentProcessId = fctx->ParentProcessId;
+        RtlStringCchCopyW(ctx->ProcName, 260, fctx->ProcName);
+        RtlStringCchCopyW(ctx->FileName, 260, fctx->FileName);
         FltReleaseContext(fctx);
     }
     else {
         WCHAR pname[260] = L"<Unknown>"; ULONG ppid = 0;
-        SearchProcessInfo(context->ProcessId, pname, &ppid);
-        context->ParentProcessId = ppid;
-        RtlStringCchCopyW(context->ProcName, 260, pname);
-
-        if (FltObjects->FileObject && FltObjects->FileObject->FileName.Length > 0)
-            ExtractFileName(&FltObjects->FileObject->FileName, context->FileName, 260);
-        else
-            RtlStringCchCopyW(context->FileName, 260, L"<UnknownFile>");
+        (void)SearchProcessInfo(ctx->ProcessId, pname, &ppid);
+        ctx->ParentProcessId = ppid;
+        RtlStringCchCopyW(ctx->ProcName, 260, pname);
+        RtlStringCchCopyW(ctx->FileName, 260, L"<UnknownFile>");
     }
 
-    *CompletionContext = context;
+    *CompletionContext = ctx;
     return FLT_PREOP_SUCCESS_WITH_CALLBACK;
 }
 
@@ -481,7 +465,7 @@ NTSTATUS DriverEntry( PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath 
         sizeof( FLT_REGISTRATION ),
         FLT_REGISTRATION_VERSION,
         0,
-        NULL,
+        g_ContextRegs,
         Callbacks,
         DriverUnload,
         InstanceSetupCallback,
