@@ -4,8 +4,8 @@
 
 // Create 시점에 FILE_OBJECT에 파일/프로세스 정보를 부착한다.
 // ※ REPLACE_IF_EXISTS 사용 이유
-//    - 동일 FILE_OBJECT에 이전 컨텍스트가 남아 있더라도 항상 최신 정보로 교체한다.
-//    - KEEP_IF_EXISTS를 쓰면 '이미 있으면 그냥 두기'라서 저장 실패(=오래된 정보 재사용) 케이스가 생길 수 있다.
+// - 동일 FILE_OBJECT에 이전 컨텍스트가 남아 있더라도 항상 최신 정보로 교체한다.
+// - KEEP_IF_EXISTS를 쓰면 '이미 있으면 그냥 두기'라서 저장 실패(=오래된 정보 재사용) 케이스가 생길 수 있다.
 NTSTATUS SetFileContextFromCreate( PFLT_CALLBACK_DATA Data, PCFLT_RELATED_OBJECTS FltObjects, const WCHAR* FileName, const WCHAR* ProcName, ULONG Pid, ULONG Ppid )
 {
     UNREFERENCED_PARAMETER( Data );
